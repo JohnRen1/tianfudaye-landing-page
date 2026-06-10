@@ -1,0 +1,115 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Bot, CalendarCheck, CheckCircle2, ChevronRight, Clock, Headphones, MessageCircle, Phone, Send, ShieldCheck } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+
+const faqs = [
+  "如何领取沙龙资料？",
+  "风险测评报告怎么看？",
+  "AI 回答可以作为税务意见吗？",
+  "如何预约人工顾问？",
+];
+
+export default function Page() {
+  const router = useRouter();
+  const [submitted, setSubmitted] = useState(false);
+
+  return (
+    <div className="mx-auto min-h-screen max-w-[390px] bg-background pb-8">
+      <div className="relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
+        <div className="absolute -right-16 top-8 h-36 w-36 rounded-full bg-white/10" />
+        <Button variant="ghost" size="icon" className="mb-6 rounded-full text-white hover:bg-white/10 hover:text-white" onClick={() => router.push("/")} aria-label="返回首页">
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
+        <div className="flex items-center gap-3">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/12 shadow-inner">
+            <Headphones className="h-7 w-7" />
+          </div>
+          <div>
+            <Badge className="mb-2 bg-accent text-accent-foreground hover:bg-accent/90">在线支持</Badge>
+            <h1 className="text-2xl font-bold">咨询客服</h1>
+            <p className="mt-1 text-sm text-white/78">资料领取、AI 助手、风险报告问题都可以咨询</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="-mt-4 space-y-4 px-4">
+        <Card className="border-0 shadow-lg shadow-primary/10">
+          <CardContent className="p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-success" />
+              <h2 className="font-semibold text-foreground">服务时间</h2>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-2xl bg-secondary/70 p-3">
+                <Clock className="mb-2 h-4 w-4 text-primary" />
+                <p className="font-medium text-foreground">工作日</p>
+                <p className="mt-1 text-xs text-muted-foreground">09:00 - 18:00</p>
+              </div>
+              <div className="rounded-2xl bg-secondary/70 p-3">
+                <Phone className="mb-2 h-4 w-4 text-primary" />
+                <p className="font-medium text-foreground">客服热线</p>
+                <p className="mt-1 text-xs text-muted-foreground">400-888-6688</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-sm">
+          <CardContent className="p-4">
+            <h2 className="mb-3 font-semibold text-foreground">常见问题</h2>
+            <div className="space-y-2">
+              {faqs.map((faq) => (
+                <button key={faq} className="flex w-full items-center justify-between rounded-2xl bg-secondary/60 p-3 text-left text-sm text-foreground" onClick={() => router.push("/tax-ai")}>
+                  <span>{faq}</span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-sm">
+          <CardContent className="space-y-3 p-4">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="h-5 w-5 text-primary" />
+              <h2 className="font-semibold text-foreground">留言咨询</h2>
+            </div>
+            {submitted ? (
+              <div className="rounded-2xl bg-success/10 p-4 text-center">
+                <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-success" />
+                <p className="font-semibold text-foreground">留言已提交</p>
+                <p className="mt-1 text-sm text-muted-foreground">客服将在工作时间尽快回复您。</p>
+              </div>
+            ) : (
+              <>
+                <Input className="h-12 rounded-xl" placeholder="手机号，方便客服联系" type="tel" />
+                <Textarea className="min-h-24 rounded-xl" placeholder="请描述您遇到的问题，例如无法领取资料、报告解读、预约顾问等" />
+                <Button className="h-11 w-full rounded-xl bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => setSubmitted(true)}>
+                  <Send className="mr-2 h-4 w-4" />提交留言
+                </Button>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Button variant="outline" className="h-12 rounded-xl" onClick={() => router.push("/tax-ai")}>
+            <Bot className="mr-2 h-4 w-4" />继续问 AI
+          </Button>
+          <Button className="h-12 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.push("/appointment")}>
+            <CalendarCheck className="mr-2 h-4 w-4" />预约顾问
+          </Button>
+        </div>
+
+        <p className="text-center text-xs leading-relaxed text-muted-foreground">客服咨询仅用于处理平台使用和服务咨询问题，不构成正式税务意见。</p>
+      </div>
+    </div>
+  );
+}
