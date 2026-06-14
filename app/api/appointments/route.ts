@@ -5,6 +5,8 @@ import { requireUser } from '@/lib/auth';
 import type { AppointmentCreateDTO } from '@/lib/contracts/appointment';
 import { APPOINTMENT_ERROR_CODES } from '@/lib/contracts/appointment';
 
+export const dynamic = 'force-dynamic';
+
 const VALID_TOPICS = new Set([
   'tax_risk_check',
   'invoice_compliance',

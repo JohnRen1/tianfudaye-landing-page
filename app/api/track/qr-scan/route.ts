@@ -3,6 +3,8 @@ import { trackQrScan } from '@/lib/db';
 import { ok, fail } from '@/lib/api-response';
 import type { QrScanTrackRequestDTO } from '@/lib/contracts/tracking';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
   let body: unknown;
   try {

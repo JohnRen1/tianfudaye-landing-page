@@ -6,6 +6,8 @@ import { AI_CHAT_ERROR_CODES } from '@/lib/contracts/ai-chat';
 import type { AiAnswerBodyDTO } from '@/lib/contracts/ai-chat';
 import type { RiskLevel } from '@/lib/contracts/shared';
 
+export const dynamic = 'force-dynamic';
+
 // ===========================================================================
 // 模拟 AI 回答生成（开发阶段）
 // 生产阶段：此处替换为真实 LLM 调用（OpenAI/DeepSeek/自有模型）

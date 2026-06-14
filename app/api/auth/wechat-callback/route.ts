@@ -11,6 +11,8 @@ import type {
   WechatPendingBindResponseDTO,
 } from '@/lib/contracts/auth';
 
+export const dynamic = 'force-dynamic';
+
 function buildDevToken(userId: string): string {
   return Buffer.from(`${userId}:${Date.now()}`).toString('base64');
 }

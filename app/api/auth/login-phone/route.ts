@@ -3,6 +3,8 @@ import { buildPhoneLoginResponse, loginOrCreateUserByPhone, verifyAndConsumeDevC
 import { ok, fail } from '@/lib/api-response';
 import type { PhoneLoginResponseDTO } from '@/lib/contracts/auth';
 
+export const dynamic = 'force-dynamic';
+
 const PHONE_REGEX = /^1[3-9]\d{9}$/;
 const CODE_REGEX = /^\d{6}$/;
 

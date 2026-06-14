@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { buildWechatAuthorizeUrl, createWechatOauthState } from '@/lib/wechat';
 import { fail } from '@/lib/api-response';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);

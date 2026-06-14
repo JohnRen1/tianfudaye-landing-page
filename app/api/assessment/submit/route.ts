@@ -4,6 +4,8 @@ import { requireUser } from '@/lib/auth';
 import { ok, fail } from '@/lib/api-response';
 import type { AssessmentSubmitDTO } from '@/lib/contracts/assessment';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/assessment/submit
  * 认证可选（userId 可为 null）。

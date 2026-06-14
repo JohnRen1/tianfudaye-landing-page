@@ -4,6 +4,8 @@ import { requireUser } from '@/lib/auth';
 import { ok, fail } from '@/lib/api-response';
 import type { MaterialClaimCreateDTO } from '@/lib/contracts/material';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
   const ctx = await requireUser(req);
   if (!ctx) return fail('AUTH_REQUIRED', '请先登录', 401);

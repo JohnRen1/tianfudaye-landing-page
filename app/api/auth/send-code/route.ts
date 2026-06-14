@@ -3,6 +3,8 @@ import { sendDevPhoneCode } from '@/lib/db';
 import { ok, fail } from '@/lib/api-response';
 import type { SendCodeResponseDTO } from '@/lib/contracts/auth';
 
+export const dynamic = 'force-dynamic';
+
 const PHONE_REGEX = /^1[3-9]\d{9}$/;
 
 export async function POST(req: NextRequest) {

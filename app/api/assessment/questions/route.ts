@@ -3,6 +3,8 @@ import { listAssessmentQuestions } from '@/lib/db';
 import { ok, fail } from '@/lib/api-response';
 import type { QuestionPublicDTO } from '@/lib/contracts/assessment';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/assessment/questions
  * 公开接口，无需认证。

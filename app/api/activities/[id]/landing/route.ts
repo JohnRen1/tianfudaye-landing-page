@@ -3,6 +3,8 @@ import { getActivityLandingDetail } from '@/lib/db';
 import { ok, fail } from '@/lib/api-response';
 import { TRACKING_ERROR_CODES } from '@/lib/contracts/tracking';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },

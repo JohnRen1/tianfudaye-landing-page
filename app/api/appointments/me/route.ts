@@ -4,6 +4,8 @@ import { ok, fail } from '@/lib/api-response';
 import { requireUser } from '@/lib/auth';
 import { APPOINTMENT_ERROR_CODES } from '@/lib/contracts/appointment';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   // 认证：端用户必须登录
   const ctx = await requireUser(req);

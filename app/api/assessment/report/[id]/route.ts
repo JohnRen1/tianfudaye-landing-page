@@ -3,6 +3,8 @@ import { getAssessmentReportById } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { ok, fail } from '@/lib/api-response';
 
+export const dynamic = 'force-dynamic';
+
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
