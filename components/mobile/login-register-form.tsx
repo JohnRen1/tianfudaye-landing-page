@@ -1,12 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2, LockKeyhole, MessageCircle, Phone, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { sendCode, loginPhone } from "@/lib/api/auth";
+import { ApiError } from "@/lib/api/client";
 
 interface LoginRegisterFormProps {
   compact?: boolean;
@@ -14,28 +17,66 @@ interface LoginRegisterFormProps {
   onSuccess?: () => void;
 }
 
+/** Map backend error codes to user-facing messages. */
+function mapErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    switch (err.code) {
+      // Contract-specified codes
+      case "PHONE_CODE_INCORRECT":
+        return "验证码错误";
+      case "PHONE_CODE_EXPIRED":
+        return "验证码已过期，请重新获取";
+      case "PHONE_CODE_RATE_LIMITED":
+      // Actual server code from send-code/route.ts
+      case "CODE_SEND_TOO_FREQUENT":
+        return "发送过于频繁，请稍后再试";
+      // Actual server code from login-phone/route.ts (covers both incorrect & expired)
+      case "AUTH_INVALID_CODE":
+        return "验证码错误或已过期";
+      default:
+        return err.message || "操作失败，请稍后重试";
+    }
+  }
+  return "网络异常，请稍后重试";
+}
+
 export function LoginRegisterForm({
   compact = false,
   submitText = "登录 / 注册",
   onSuccess,
 }: LoginRegisterFormProps) {
+  const router = useRouter();
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [countdown, setCountdown] = useState(0);
   const [agreed, setAgreed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [loginType, setLoginType] = useState<"wechat" | "phone" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const timerRef = useRef<number | null>(null);
 
-  const isPhoneValid = phone.length === 11;
+  // Clean up interval on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) {
+        window.clearInterval(timerRef.current);
+      }
+    };
+  }, []);
+
+  const isPhoneValid = /^1[3-9]\d{9}$/.test(phone);
   const isCodeValid = code.length === 6;
   const canSubmit = isPhoneValid && isCodeValid && agreed && !isLoading;
 
   const startCountdown = () => {
     setCountdown(60);
-    const timer = window.setInterval(() => {
+    if (timerRef.current !== null) window.clearInterval(timerRef.current);
+    timerRef.current = window.setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
-          window.clearInterval(timer);
+          window.clearInterval(timerRef.current!);
+          timerRef.current = null;
           return 0;
         }
         return prev - 1;
@@ -43,29 +84,64 @@ export function LoginRegisterForm({
     }, 1000);
   };
 
-  const handleSendCode = () => {
-    if (!isPhoneValid || countdown > 0) return;
-    startCountdown();
+  const handleSendCode = async () => {
+    if (!isPhoneValid || countdown > 0 || isSending) return;
+    setError(null);
+    setIsSending(true);
+    try {
+      const result = await sendCode(phone);
+      startCountdown();
+      // Dev mode: auto-fill verification code when _devCode is present
+      if (result._devCode) {
+        setCode(result._devCode);
+      }
+    } catch (err) {
+      setError(mapErrorMessage(err));
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handlePhoneLogin = async () => {
     if (!canSubmit) return;
+    setError(null);
     setLoginType("phone");
     setIsLoading(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 900));
-    setIsLoading(false);
-    setLoginType(null);
-    onSuccess?.();
+    try {
+      await loginPhone(phone, code);
+      onSuccess?.();
+      router.push("/");
+    } catch (err) {
+      setError(mapErrorMessage(err));
+    } finally {
+      setIsLoading(false);
+      setLoginType(null);
+    }
   };
 
   const handleWechatLogin = async () => {
     if (!agreed || isLoading) return;
     setLoginType("wechat");
     setIsLoading(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 900));
+    try {
+      const currentUrl = new URL(window.location.href);
+      const redirectPath = `${currentUrl.pathname}${currentUrl.search}`;
+      const sourceQrId = currentUrl.searchParams.get("qr_id") ?? currentUrl.searchParams.get("qr") ?? "";
+      const sourceActivityId =
+        currentUrl.searchParams.get("activity_id") ?? currentUrl.searchParams.get("activity") ?? "";
+
+      const startUrl = new URL("/api/auth/wechat/start", window.location.origin);
+      startUrl.searchParams.set("redirectPath", redirectPath);
+      if (sourceQrId) startUrl.searchParams.set("sourceQrId", sourceQrId);
+      if (sourceActivityId) startUrl.searchParams.set("sourceActivityId", sourceActivityId);
+
+      window.location.href = startUrl.toString();
+      return;
+    } catch {
+      setError("微信授权发起失败，请稍后重试");
+    }
     setIsLoading(false);
     setLoginType(null);
-    onSuccess?.();
   };
 
   return (
@@ -102,7 +178,10 @@ export function LoginRegisterForm({
               inputMode="numeric"
               placeholder="请输入手机号"
               value={phone}
-              onChange={(event) => setPhone(event.target.value.replace(/\D/g, "").slice(0, 11))}
+              onChange={(event) => {
+                setPhone(event.target.value.replace(/\D/g, "").slice(0, 11));
+                setError(null);
+              }}
               className="h-12 rounded-xl pl-10 text-base"
             />
           </div>
@@ -121,21 +200,36 @@ export function LoginRegisterForm({
                 inputMode="numeric"
                 placeholder="6位验证码"
                 value={code}
-                onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                onChange={(event) => {
+                  setCode(event.target.value.replace(/\D/g, "").slice(0, 6));
+                  setError(null);
+                }}
                 className="h-12 rounded-xl pl-10 text-base tracking-wider"
               />
             </div>
             <Button
               variant="outline"
               className="h-12 min-w-[104px] rounded-xl px-3 text-sm"
-              disabled={!isPhoneValid || countdown > 0}
+              disabled={!isPhoneValid || countdown > 0 || isSending}
               onClick={handleSendCode}
             >
-              {countdown > 0 ? `${countdown}s` : "获取验证码"}
+              {isSending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : countdown > 0 ? (
+                `${countdown}s`
+              ) : (
+                "获取验证码"
+              )}
             </Button>
           </div>
         </div>
       </div>
+
+      {error && (
+        <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {error}
+        </p>
+      )}
 
       <label className="flex items-start gap-2 rounded-xl bg-secondary/50 p-3 text-xs leading-relaxed text-muted-foreground">
         <Checkbox

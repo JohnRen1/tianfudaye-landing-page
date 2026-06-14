@@ -114,7 +114,14 @@ export function EventLandingPage({
   return (
     <div className="min-h-screen bg-background pb-24">
       {/* 顶部活动封面区域 - 深蓝渐变 */}
-      <div className="relative bg-gradient-to-br from-primary via-primary/90 to-primary/80 text-primary-foreground">
+      <div
+        className={cn(
+          "relative bg-gradient-to-br from-primary via-primary/90 to-primary/80 text-primary-foreground",
+          eventData.coverImage && "bg-cover bg-center",
+        )}
+        style={eventData.coverImage ? { backgroundImage: `url("${eventData.coverImage}")` } : undefined}
+      >
+        {eventData.coverImage ? <div className="absolute inset-0 bg-primary/15" /> : null}
         {/* 装饰图案 */}
         <div className="absolute inset-0 overflow-hidden">
           <div className="absolute -top-20 -right-20 h-40 w-40 rounded-full bg-white/5" />

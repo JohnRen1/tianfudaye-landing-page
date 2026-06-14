@@ -1,16 +1,19 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  AlertCircle,
   ArrowLeft,
   BookmarkCheck,
   CalendarCheck,
   CheckCircle2,
   FileLock2,
   FileText,
+  Loader2,
   LockKeyhole,
   Radar,
+  RefreshCcw,
   ShieldAlert,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -18,123 +21,201 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { LoginModal } from "@/components/mobile/login-modal";
 import { cn } from "@/lib/utils";
+import { getReport, unlockReport, saveReport } from "@/lib/api/assessment";
+import { RISK_LEVEL_LABEL } from "@/lib/contracts/shared";
+import type { AssessmentReportPublicDTO } from "@/lib/contracts/assessment";
+import type { RiskLevel } from "@/lib/contracts/shared";
 
-type RiskLevel = "低风险" | "中风险" | "高风险" | "严重风险";
-
-const modules = [
-  {
-    name: "发票合规风险",
-    score: 76,
-    desc: "存在部分发票资料链条不完整，建议核查合同、交付证明与发票内容一致性。",
-    advice: "优先补齐大额发票对应的合同、验收、付款和业务说明。",
-  },
-  {
-    name: "公转私风险",
-    score: 82,
-    desc: "存在较高频率公户转个人账户场景，需确认用途和凭证留存情况。",
-    advice: "对股东借款、备用金、个人供应商付款建立审批和归档规则。",
-  },
-  {
-    name: "个税社保风险",
-    score: 58,
-    desc: "员工社保、个税申报与工资发放存在一定一致性风险。",
-    advice: "核对工资表、银行流水、个税申报和社保基数是否匹配。",
-  },
-  {
-    name: "成本费用风险",
-    score: 69,
-    desc: "部分费用真实性证明材料不足，可能影响企业所得税税前扣除。",
-    advice: "重点梳理咨询费、会议费、推广费等费用的业务证明。",
-  },
-  {
-    name: "税务稽查应对风险",
-    score: 72,
-    desc: "资料归档和检查应对机制仍需完善，建议提前建立风险说明底稿。",
-    advice: "建立年度税务资料归档清单，保留异常事项说明。",
-  },
-];
-
-function getRiskLevel(score: number): RiskLevel {
-  if (score >= 85) return "严重风险";
-  if (score >= 65) return "高风险";
-  if (score >= 35) return "中风险";
-  return "低风险";
-}
+// ---------------------------------------------------------------------------
+// Style helpers
+// ---------------------------------------------------------------------------
 
 function getRiskStyle(level: RiskLevel) {
-  if (level === "低风险") {
-    return {
-      text: "text-success",
-      bg: "bg-success/10",
-      border: "border-success/20",
-      ring: "#16a34a",
-    };
+  switch (level) {
+    case "low":
+      return {
+        text: "text-success",
+        bg: "bg-success/10",
+        border: "border-success/20",
+        ring: "#16a34a",
+      };
+    case "medium":
+      return {
+        text: "text-warning",
+        bg: "bg-warning/10",
+        border: "border-warning/20",
+        ring: "#f59e0b",
+      };
+    case "high":
+      return {
+        text: "text-orange-600",
+        bg: "bg-orange-50",
+        border: "border-orange-200",
+        ring: "#ea580c",
+      };
+    case "critical":
+      return {
+        text: "text-destructive",
+        bg: "bg-destructive/10",
+        border: "border-destructive/20",
+        ring: "#dc2626",
+      };
   }
-
-  if (level === "中风险") {
-    return {
-      text: "text-warning",
-      bg: "bg-warning/10",
-      border: "border-warning/20",
-      ring: "#f59e0b",
-    };
-  }
-
-  if (level === "高风险") {
-    return {
-      text: "text-orange-600",
-      bg: "bg-orange-50",
-      border: "border-orange-200",
-      ring: "#ea580c",
-    };
-  }
-
-  return {
-    text: "text-destructive",
-    bg: "bg-destructive/10",
-    border: "border-destructive/20",
-    ring: "#dc2626",
-  };
 }
+
+// ---------------------------------------------------------------------------
+// Main report content (wrapped in Suspense by Page)
+// ---------------------------------------------------------------------------
 
 function RiskReportContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const reportId = searchParams.get("id") ?? "";
+
+  // Remote state
+  const [report, setReport] = useState<AssessmentReportPublicDTO | null>(null);
+  const [loadingReport, setLoadingReport] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Action state
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [isUnlocked, setIsUnlocked] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const score = Math.min(
-    100,
-    Math.max(0, Number(searchParams.get("score") ?? 72))
-  );
-  const level = getRiskLevel(score);
-  const style = getRiskStyle(level);
-  const circumference = 2 * Math.PI * 48;
-  const offset = circumference - (score / 100) * circumference;
-  const highRisk = level === "高风险" || level === "严重风险";
+  // -------------------------------------------------------------------------
+  // Load report
+  // -------------------------------------------------------------------------
+  const fetchReport = useCallback(async () => {
+    if (!reportId) {
+      setLoadError("报告 ID 缺失，请重新完成测评");
+      setLoadingReport(false);
+      return;
+    }
+    setLoadingReport(true);
+    setLoadError(null);
+    try {
+      const data = await getReport(reportId);
+      setReport(data);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "报告加载失败，请重试");
+    } finally {
+      setLoadingReport(false);
+    }
+  }, [reportId]);
 
-  const moduleList = useMemo(
-    () =>
-      modules.map((item) => {
-        const itemLevel = getRiskLevel(item.score);
+  useEffect(() => {
+    fetchReport();
+  }, [fetchReport]);
 
-        return {
-          ...item,
-          level: itemLevel,
-          style: getRiskStyle(itemLevel),
-        };
-      }),
-    []
-  );
-
+  // -------------------------------------------------------------------------
+  // Unlock
+  // -------------------------------------------------------------------------
   const handleUnlock = () => {
-    if (isUnlocked) return;
-    setShowLoginModal(true);
+    if (!report || report.isUnlocked) return;
+    // Check login by presence of token in localStorage
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem("user-token") : null;
+    if (!token) {
+      setShowLoginModal(true);
+      return;
+    }
+    doUnlock();
   };
 
+  const doUnlock = async () => {
+    setUnlocking(true);
+    setUnlockError(null);
+    try {
+      const result = await unlockReport(reportId);
+      setReport(result.report);
+    } catch (err) {
+      setUnlockError(err instanceof Error ? err.message : "解锁失败，请重试");
+    } finally {
+      setUnlocking(false);
+    }
+  };
+
+  // Called after successful login in modal
+  const handleLoginSuccess = () => {
+    setShowLoginModal(false);
+    doUnlock();
+  };
+
+  // -------------------------------------------------------------------------
+  // Save
+  // -------------------------------------------------------------------------
+  const handleSave = async () => {
+    if (!report || report.isSaved || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await saveReport(reportId);
+      setReport((prev) => (prev ? { ...prev, isSaved: true } : prev));
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "保存失败，请重试");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // -------------------------------------------------------------------------
+  // Loading / error states
+  // -------------------------------------------------------------------------
+  if (loadingReport) {
+    return (
+      <div className="mx-auto flex min-h-screen max-w-[390px] flex-col items-center justify-center gap-4 bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">正在加载风险报告…</p>
+      </div>
+    );
+  }
+
+  if (loadError || !report) {
+    return (
+      <div className="mx-auto flex min-h-screen max-w-[390px] flex-col items-center justify-center gap-4 bg-background px-6 text-center">
+        <AlertCircle className="h-10 w-10 text-destructive" />
+        <p className="font-semibold text-foreground">报告加载失败</p>
+        <p className="text-sm text-muted-foreground">
+          {loadError ?? "未知错误"}
+        </p>
+        <Button
+          variant="outline"
+          className="mt-2 h-11 rounded-xl"
+          onClick={fetchReport}
+        >
+          <RefreshCcw className="mr-2 h-4 w-4" />
+          重新加载
+        </Button>
+        <Button
+          variant="ghost"
+          className="h-11 rounded-xl text-sm"
+          onClick={() => router.push("/risk-assessment/quiz")}
+        >
+          重新测评
+        </Button>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Derived display values
+  // -------------------------------------------------------------------------
+  const { score, riskLevel, modules, isUnlocked, isSaved, suggestions } =
+    report;
+  const style = getRiskStyle(riskLevel);
+  const levelLabel = RISK_LEVEL_LABEL[riskLevel];
+  const circumference = 2 * Math.PI * 48;
+  const offset = circumference - (score / 100) * circumference;
+  const highRisk = riskLevel === "high" || riskLevel === "critical";
+
+  // -------------------------------------------------------------------------
+  // Render
+  // -------------------------------------------------------------------------
   return (
     <div className="mx-auto min-h-screen max-w-[390px] bg-background pb-28">
+      {/* Header */}
       <div className="relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
         <div className="absolute -right-16 top-10 h-40 w-40 rounded-full border border-white/15" />
         <div className="absolute bottom-8 right-10 h-16 w-16 rounded-full bg-accent/20 blur-sm" />
@@ -161,6 +242,7 @@ function RiskReportContent() {
       </div>
 
       <div className="-mt-5 space-y-4 px-4">
+        {/* Score card */}
         <Card className={cn("border shadow-xl shadow-primary/10", style.border)}>
           <CardContent className="p-5">
             <div className="flex items-center justify-between gap-4">
@@ -179,7 +261,7 @@ function RiskReportContent() {
                     style.text
                   )}
                 >
-                  {level}
+                  {levelLabel}
                 </div>
               </div>
 
@@ -233,83 +315,139 @@ function RiskReportContent() {
           </CardContent>
         </Card>
 
+        {/* Module cards */}
         <Card className="border-0 shadow-sm">
           <CardContent className="p-4">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="font-semibold text-foreground">主要风险模块</h2>
               <Badge variant="outline" className="border-primary/20 text-primary">
-                5 项重点
+                {modules.length} 项重点
               </Badge>
             </div>
 
             <div className="space-y-3">
-              {moduleList.map((item) => (
-                <div
-                  key={item.name}
-                  className="rounded-2xl border border-border bg-card p-4 shadow-sm"
-                >
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <h3 className="font-semibold text-foreground">{item.name}</h3>
-                    <span
-                      className={cn(
-                        "shrink-0 rounded-full px-2 py-1 text-xs font-semibold",
-                        item.style.bg,
-                        item.style.text
-                      )}
-                    >
-                      {item.level}
+              {modules.map((item) => {
+                const itemStyle = getRiskStyle(item.riskLevel);
+                const itemLabel = RISK_LEVEL_LABEL[item.riskLevel];
+                return (
+                  <div
+                    key={item.moduleKey}
+                    className="rounded-2xl border border-border bg-card p-4 shadow-sm"
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <h3 className="font-semibold text-foreground">
+                        {item.moduleName}
+                      </h3>
+                      <span
+                        className={cn(
+                          "shrink-0 rounded-full px-2 py-1 text-xs font-semibold",
+                          itemStyle.bg,
+                          itemStyle.text
+                        )}
+                      >
+                        {itemLabel}
+                      </span>
+                    </div>
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      {item.desc}
+                    </p>
+                    <div className="mt-3 rounded-xl bg-secondary/60 p-3 text-sm leading-relaxed text-foreground">
+                      <span className="font-semibold">初步建议：</span>
+                      {item.advice}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Suggestions (visible only when unlocked) */}
+        {isUnlocked && suggestions && suggestions.length > 0 && (
+          <Card className="border-success/20 bg-success/5 shadow-sm">
+            <CardContent className="p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-success" />
+                <h2 className="font-semibold text-foreground">完整整改建议</h2>
+              </div>
+              <ul className="space-y-2">
+                {suggestions.map((s, i) => (
+                  <li
+                    key={i}
+                    className="flex items-start gap-2 text-sm leading-relaxed text-foreground"
+                  >
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-success/15 text-xs font-bold text-success">
+                      {i + 1}
                     </span>
-                  </div>
-                  <p className="text-sm leading-relaxed text-muted-foreground">
-                    {item.desc}
-                  </p>
-                  <div className="mt-3 rounded-xl bg-secondary/60 p-3 text-sm leading-relaxed text-foreground">
-                    <span className="font-semibold">初步建议：</span>
-                    {item.advice}
-                  </div>
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Unlock card (hidden once unlocked) */}
+        {!isUnlocked && (
+          <Card className="border-primary/15 bg-primary/5 shadow-sm">
+            <CardContent className="p-4">
+              <div className="mb-3 flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10">
+                  <FileLock2 className="h-5 w-5 text-primary" />
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-primary/15 bg-primary/5 shadow-sm">
-          <CardContent className="p-4">
-            <div className="mb-3 flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10">
-                <FileLock2 className="h-5 w-5 text-primary" />
+                <div>
+                  <h2 className="font-semibold text-foreground">解锁完整报告</h2>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                    解锁完整报告，查看详细风险说明和整改建议。
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="font-semibold text-foreground">解锁完整报告</h2>
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                  解锁完整报告，查看详细风险说明和整改建议。
-                </p>
-              </div>
-            </div>
 
-            <Button
-              className="h-11 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
-              onClick={handleUnlock}
-            >
-              {isUnlocked ? (
-                <CheckCircle2 className="mr-2 h-4 w-4" />
-              ) : (
-                <LockKeyhole className="mr-2 h-4 w-4" />
+              {unlockError && (
+                <div className="mb-3 flex items-center gap-2 rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  {unlockError}
+                </div>
               )}
-              {isUnlocked ? "已解锁完整报告" : "手机号登录查看完整报告"}
-            </Button>
-          </CardContent>
-        </Card>
 
+              <Button
+                className="h-11 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+                disabled={unlocking}
+                onClick={handleUnlock}
+              >
+                {unlocking ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <LockKeyhole className="mr-2 h-4 w-4" />
+                )}
+                {unlocking ? "解锁中…" : "手机号登录查看完整报告"}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Save & appointment */}
         <Card className="border-0 shadow-sm">
           <CardContent className="space-y-3 p-4">
+            {saveError && (
+              <div className="flex items-center gap-2 rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {saveError}
+              </div>
+            )}
+
             <Button
               variant="outline"
               className="h-11 w-full rounded-xl"
-              onClick={() => setIsSaved(true)}
+              disabled={isSaved || saving}
+              onClick={handleSave}
             >
-              <BookmarkCheck className="mr-2 h-4 w-4" />
-              {isSaved ? "已保存到我的报告" : "保存到我的报告"}
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <BookmarkCheck className="mr-2 h-4 w-4" />
+              )}
+              {isSaved ? "已保存到我的报告" : saving ? "保存中…" : "保存到我的报告"}
             </Button>
 
             <Button
@@ -328,11 +466,13 @@ function RiskReportContent() {
         </div>
       </div>
 
+      {/* Sticky footer */}
       <div className="fixed bottom-0 left-0 right-0 border-t border-border bg-card/95 p-4 shadow-lg backdrop-blur">
         <div className="mx-auto flex max-w-[390px] gap-3">
           <Button
             variant="outline"
             className="h-12 flex-1 rounded-xl"
+            disabled={unlocking}
             onClick={handleUnlock}
           >
             <FileText className="mr-2 h-4 w-4" />
@@ -352,7 +492,7 @@ function RiskReportContent() {
       <LoginModal
         open={showLoginModal}
         onOpenChange={setShowLoginModal}
-        onSuccess={() => setIsUnlocked(true)}
+        onSuccess={handleLoginSuccess}
       />
     </div>
   );
@@ -362,8 +502,9 @@ export default function Page() {
   return (
     <Suspense
       fallback={
-        <div className="mx-auto min-h-screen max-w-[390px] bg-background p-6 text-sm text-muted-foreground">
-          正在加载风险报告...
+        <div className="mx-auto flex min-h-screen max-w-[390px] flex-col items-center justify-center gap-4 bg-background">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">正在加载风险报告…</p>
         </div>
       }
     >

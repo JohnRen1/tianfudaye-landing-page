@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Building2, CalendarCheck, CheckCircle2, Clock, FileUp, MessageCircle, MessageSquare, Phone, Send, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,11 +10,19 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { submitAppointment } from "@/lib/api/appointments";
+import { APPOINTMENT_TOPIC_LABEL, type AppointmentTopic } from "@/lib/contracts/appointment";
+import { ApiError } from "@/lib/api/client";
 
 const topics = ["税务风险排查", "发票合规", "公转私风险", "企业所得税筹划", "个税社保合规", "税务稽查应对", "公司架构设计", "其他问题"];
 const industries = ["制造业", "批发零售", "互联网/科技服务", "建筑工程", "餐饮服务", "贸易进出口", "专业服务", "其他行业"];
 const contactTimes = ["工作日上午", "工作日下午", "工作日晚上", "周末", "均可"];
 const uploadOptions = ["愿意，后续顾问联系后上传", "暂不上传", "视情况而定"];
+
+// 中文标签 → AppointmentTopic 枚举值的反向映射
+const TOPIC_LABEL_TO_ENUM = Object.fromEntries(
+  Object.entries(APPOINTMENT_TOPIC_LABEL).map(([enumValue, label]) => [label, enumValue as AppointmentTopic]),
+) as Record<string, AppointmentTopic>;
 
 type FormState = {
   name: string;
@@ -47,15 +55,21 @@ function FieldError({ message }: { message?: string }) {
   return <p className="mt-1 text-xs text-destructive">{message}</p>;
 }
 
-export default function Page() {
+function AppointmentForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const sourceLeadId = searchParams.get("leadId") ?? undefined;
+
   const [form, setForm] = useState<FormState>(initialForm);
   const [errors, setErrors] = useState<ErrorState>({});
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   const updateField = (field: keyof FormState, value: string) => {
     setForm((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: undefined }));
+    setApiError(null);
   };
 
   const validate = () => {
@@ -69,9 +83,46 @@ export default function Page() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validate()) return;
-    setSubmitted(true);
+
+    // topic 字段：中文标签 → AppointmentTopic 枚举值
+    const topicEnum = TOPIC_LABEL_TO_ENUM[form.topic];
+    if (!topicEnum) {
+      setApiError("咨询主题无效，请重新选择");
+      return;
+    }
+
+    setSubmitting(true);
+    setApiError(null);
+
+    try {
+      const result = await submitAppointment({
+        name: form.name.trim(),
+        phone: form.phone,
+        topic: topicEnum,
+        description: form.description.trim(),
+        ...(form.company.trim() && { company: form.company.trim() }),
+        ...(form.industry && { industry: form.industry }),
+        ...(form.contactTime && { contactTime: form.contactTime }),
+        ...(form.wechat.trim() && { wechat: form.wechat.trim() }),
+        ...(form.uploadIntent && { uploadIntent: form.uploadIntent }),
+        ...(sourceLeadId && { sourceLeadId }),
+      });
+
+      // 持久化预约 ID 供"查看我的预约"页使用
+      localStorage.setItem("appointmentId", result.id);
+
+      setSubmitted(true);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setApiError(error.message);
+      } else {
+        setApiError("提交失败，请稍后重试");
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (submitted) {
@@ -88,7 +139,7 @@ export default function Page() {
             </p>
             <div className="mt-6 w-full space-y-3">
               <Button className="h-12 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.push("/")}>返回首页</Button>
-              <Button variant="outline" className="h-12 w-full rounded-xl" onClick={() => router.push("/appointment")}>查看我的预约</Button>
+              <Button variant="outline" className="h-12 w-full rounded-xl" onClick={() => router.push("/appointment/my")}>查看我的预约</Button>
               <Button variant="outline" className="h-12 w-full rounded-xl border-primary/20 text-primary" onClick={() => router.push("/tax-ai")}>继续问 AI</Button>
             </div>
           </CardContent>
@@ -118,6 +169,12 @@ export default function Page() {
       <div className="-mt-4 px-4">
         <Card className="border-0 shadow-lg shadow-primary/10">
           <CardContent className="space-y-5 p-5">
+            {apiError && (
+              <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                {apiError}
+              </div>
+            )}
+
             <div>
               <Label className="mb-2 flex items-center gap-1 text-sm font-medium">姓名 <span className="text-destructive">*</span></Label>
               <div className="relative">
@@ -210,8 +267,13 @@ export default function Page() {
 
       <div className="fixed bottom-0 left-0 right-0 border-t border-border bg-card/95 p-4 shadow-lg backdrop-blur">
         <div className="mx-auto max-w-[390px]">
-          <Button className="h-12 w-full rounded-xl bg-accent text-base font-semibold text-accent-foreground hover:bg-accent/90" onClick={handleSubmit}>
-            <Send className="mr-2 h-4 w-4" />提交预约
+          <Button
+            className="h-12 w-full rounded-xl bg-accent text-base font-semibold text-accent-foreground hover:bg-accent/90 disabled:opacity-60"
+            onClick={handleSubmit}
+            disabled={submitting}
+          >
+            <Send className="mr-2 h-4 w-4" />
+            {submitting ? "提交中..." : "提交预约"}
           </Button>
           <div className="mt-2 flex items-center justify-center gap-1 text-xs text-muted-foreground">
             <Clock className="h-3.5 w-3.5" />顾问通常将在 1 个工作日内联系
@@ -219,5 +281,13 @@ export default function Page() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense>
+      <AppointmentForm />
+    </Suspense>
   );
 }
