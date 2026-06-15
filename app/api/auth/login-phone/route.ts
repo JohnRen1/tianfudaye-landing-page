@@ -32,13 +32,6 @@ export async function POST(req: NextRequest) {
     return fail('INVALID_CODE', '验证码格式不正确', 400);
   }
 
-  // 验证码校验
-  // 生产阶段替换为查 Redis KV 或 Supabase Auth OTP 验证
-  if (process.env.NODE_ENV === 'production') {
-    // TODO: 接入真实短信验证
-    return fail('SMS_NOT_CONFIGURED', '生产环境尚未接入短信服务', 501);
-  }
-
   if (!verifyAndConsumeDevCode(phone, code)) {
     return fail('AUTH_INVALID_CODE', '验证码错误或已过期', 401);
   }

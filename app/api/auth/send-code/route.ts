@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { sendDevPhoneCode } from '@/lib/db';
 import { ok, fail } from '@/lib/api-response';
 import type { SendCodeResponseDTO } from '@/lib/contracts/auth';
+import { getSmsProvider, sendJuheSmsCode } from '@/lib/sms';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +28,20 @@ export async function POST(req: NextRequest) {
 
   try {
     const response: SendCodeResponseDTO & { _devCode?: string } = await sendDevPhoneCode(phone);
+    const provider = getSmsProvider();
+
+    if (provider === 'juhe') {
+      const code = response._devCode;
+      if (!code) {
+        return fail('SMS_CODE_PREPARE_FAILED', '验证码生成失败', 500);
+      }
+      await sendJuheSmsCode({ phone, code });
+      return ok({
+        expiresInSeconds: response.expiresInSeconds,
+        isRegistered: response.isRegistered,
+      });
+    }
+
     return ok(response);
   } catch (error) {
     if (error instanceof Error && error.message === 'CODE_SEND_TOO_FREQUENT') {
