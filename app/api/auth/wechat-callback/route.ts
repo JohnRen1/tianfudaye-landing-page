@@ -41,16 +41,14 @@ export async function GET(req: NextRequest) {
       accessToken: tokenResult.accessToken,
       openid: tokenResult.openid,
     });
-    const nickname = tokenResult.nickname ?? wechatUser.nickname ?? null;
-    const avatarUrl = tokenResult.avatarUrl ?? wechatUser.headimgurl ?? null;
 
     const user = await getUserByWechatOpenId(tokenResult.openid);
     if (!user) {
       const pending: WechatPendingBindResponseDTO = {
         requiresPhoneBinding: true,
         openid: tokenResult.openid,
-        nickname,
-        avatarUrl,
+        nickname: wechatUser.nickname ?? null,
+        avatarUrl: wechatUser.headimgurl ?? null,
       };
       return ok(pending, 202);
     }

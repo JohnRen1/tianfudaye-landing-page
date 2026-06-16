@@ -13,15 +13,6 @@ interface WechatUserInfo {
   unionid?: string | null;
 }
 
-interface WechatLoginExchangeResult {
-  openid: string;
-  accessToken: string;
-  nickname?: string | null;
-  avatarUrl?: string | null;
-}
-
-type WechatLoginProvider = 'native' | 'arsn';
-
 const STATE_TTL_MS = 10 * 60 * 1000;
 
 declare global {
@@ -46,10 +37,6 @@ function getRequiredEnv(name: string): string {
   return value;
 }
 
-function getWechatLoginProvider(): WechatLoginProvider {
-  return process.env.WECHAT_LOGIN_PROVIDER === 'arsn' ? 'arsn' : 'native';
-}
-
 export function createWechatOauthState(payload: WechatOauthStatePayload): string {
   const state = crypto.randomBytes(16).toString('hex');
   const store = getWechatStateStore();
@@ -66,7 +53,7 @@ export function consumeWechatOauthState(state: string): WechatOauthStatePayload 
   return found.payload;
 }
 
-function buildNativeWechatAuthorizeUrl(params: {
+export function buildWechatAuthorizeUrl(params: {
   state: string;
   scope?: 'snsapi_base' | 'snsapi_userinfo';
 }): string {
@@ -82,37 +69,10 @@ function buildNativeWechatAuthorizeUrl(params: {
   return `${url.toString()}#wechat_redirect`;
 }
 
-function buildArsnWechatAuthorizeUrl(params: {
-  state: string;
-  type?: 'wx' | 'wxmp';
-}): string {
-  const appId = getRequiredEnv('ARSN_LOGIN_APP_ID');
-  const appKey = getRequiredEnv('ARSN_LOGIN_APP_KEY');
-  const callbackUrl = getRequiredEnv('WECHAT_OAUTH_CALLBACK_URL');
-  const type = params.type ?? 'wx';
-  const redirectUrl = new URL(callbackUrl);
-  redirectUrl.searchParams.set('state', params.state);
-
-  const url = new URL('https://u.arsn.cn/connect.php');
-  url.searchParams.set('act', 'login');
-  url.searchParams.set('appid', appId);
-  url.searchParams.set('appkey', appKey);
-  url.searchParams.set('type', type);
-  url.searchParams.set('redirect_uri', redirectUrl.toString());
-  return url.toString();
-}
-
-export function buildWechatAuthorizeUrl(params: {
-  state: string;
-  scope?: 'snsapi_base' | 'snsapi_userinfo';
-  type?: 'wx' | 'wxmp';
-}): string {
-  return getWechatLoginProvider() === 'arsn'
-    ? buildArsnWechatAuthorizeUrl({ state: params.state, type: params.type })
-    : buildNativeWechatAuthorizeUrl({ state: params.state, scope: params.scope });
-}
-
-async function exchangeNativeWechatCode(code: string): Promise<WechatLoginExchangeResult> {
+export async function exchangeWechatCodeForAccessToken(code: string): Promise<{
+  openid: string;
+  accessToken: string;
+}> {
   const appId = getRequiredEnv('WECHAT_APP_ID');
   const appSecret = getRequiredEnv('WECHAT_APP_SECRET');
 
@@ -139,47 +99,7 @@ async function exchangeNativeWechatCode(code: string): Promise<WechatLoginExchan
   return { openid, accessToken };
 }
 
-async function exchangeArsnWechatCode(code: string): Promise<WechatLoginExchangeResult> {
-  const appId = getRequiredEnv('ARSN_LOGIN_APP_ID');
-  const appKey = getRequiredEnv('ARSN_LOGIN_APP_KEY');
-  const type = process.env.ARSN_WECHAT_LOGIN_TYPE === 'wxmp' ? 'wxmp' : 'wx';
-
-  const url = new URL('https://u.arsn.cn/connect.php');
-  url.searchParams.set('act', 'callback');
-  url.searchParams.set('appid', appId);
-  url.searchParams.set('appkey', appKey);
-  url.searchParams.set('type', type);
-  url.searchParams.set('code', code);
-
-  const response = await fetch(url.toString(), { method: 'GET', cache: 'no-store' });
-  const body = (await response.json()) as Record<string, unknown>;
-
-  if (!response.ok || body.code !== 0) {
-    throw new Error(`WECHAT_TOKEN_EXCHANGE_FAILED:${String(body.msg ?? response.statusText)}`);
-  }
-
-  const openid = body.social_uid;
-  const accessToken = body.access_token;
-
-  if (typeof openid !== 'string' || typeof accessToken !== 'string') {
-    throw new Error('WECHAT_TOKEN_EXCHANGE_INVALID_RESPONSE');
-  }
-
-  return {
-    openid,
-    accessToken,
-    nickname: typeof body.nickname === 'string' ? body.nickname : null,
-    avatarUrl: typeof body.faceimg === 'string' ? body.faceimg : null,
-  };
-}
-
-export async function exchangeWechatCodeForAccessToken(code: string): Promise<WechatLoginExchangeResult> {
-  return getWechatLoginProvider() === 'arsn'
-    ? exchangeArsnWechatCode(code)
-    : exchangeNativeWechatCode(code);
-}
-
-async function fetchNativeWechatUserInfo(params: {
+export async function fetchWechatUserInfo(params: {
   accessToken: string;
   openid: string;
 }): Promise<WechatUserInfo> {
@@ -201,25 +121,4 @@ async function fetchNativeWechatUserInfo(params: {
     headimgurl: typeof body.headimgurl === 'string' ? body.headimgurl : null,
     unionid: typeof body.unionid === 'string' ? body.unionid : null,
   };
-}
-
-async function fetchArsnWechatUserInfo(params: {
-  accessToken: string;
-  openid: string;
-}): Promise<WechatUserInfo> {
-  return {
-    openid: params.openid,
-    nickname: null,
-    headimgurl: null,
-    unionid: null,
-  };
-}
-
-export async function fetchWechatUserInfo(params: {
-  accessToken: string;
-  openid: string;
-}): Promise<WechatUserInfo> {
-  return getWechatLoginProvider() === 'arsn'
-    ? fetchArsnWechatUserInfo(params)
-    : fetchNativeWechatUserInfo(params);
 }
