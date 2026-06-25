@@ -1,5 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
 
+function getSupabaseProjectRef(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    const hostname = new URL(url).hostname;
+    return hostname.endsWith('.supabase.co') ? hostname.split('.')[0] ?? null : hostname;
+  } catch {
+    return null;
+  }
+}
+
 function getRequiredEnv(name: 'NEXT_PUBLIC_SUPABASE_URL' | 'NEXT_PUBLIC_SUPABASE_ANON_KEY' | 'SUPABASE_SERVICE_ROLE_KEY'): string {
   const value = process.env[name];
   if (!value) {
@@ -32,4 +42,16 @@ export function createServiceClient() {
     auth: { persistSession: false },
     },
   );
+}
+
+export function getSupabaseRuntimeInfo() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  return {
+    appEnv: process.env.APP_ENV ?? null,
+    databaseProvider: process.env.APP_DATABASE_PROVIDER ?? null,
+    supabaseProjectRef: getSupabaseProjectRef(supabaseUrl),
+    hasSupabaseUrl: Boolean(supabaseUrl),
+    hasAnonKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+    hasServiceRoleKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+  };
 }
