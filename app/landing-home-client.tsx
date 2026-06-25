@@ -72,7 +72,6 @@ export function LandingHomeClient({ fallback }: LandingHomeClientProps) {
         time: activity.time,
         location: activity.location,
         description: activity.description,
-        coverImage: activity.coverImage ?? undefined,
         materials: activity.materials ?? [],
       }}
     />
