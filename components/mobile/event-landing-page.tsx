@@ -45,25 +45,14 @@ interface EventLandingPageProps {
     description: string;
     coverImage?: string;
     materials?: EventMaterial[];
-  };
+  } | null;
   isLoggedIn?: boolean;
   onLogin?: () => void;
   showActivitySections?: boolean;
 }
 
-const defaultEventData = {
-  title: "企业所得税合规与税务风险防控沙龙",
-  speaker: "张明远",
-  speakerTitle: "注册税务师 / 高级合伙人",
-  date: "2026年6月15日",
-  time: "14:00 - 17:00",
-  location: "上海市浦东新区陆家嘴金融中心28楼",
-  description:
-    "本次沙龙聚焦企业所得税合规管理与风险防控，深入解析最新税收政策变化，帮助企业识别潜在税务风险，建立健全的税务管理体系。",
-};
-
 export function EventLandingPage({
-  eventData = defaultEventData,
+  eventData = null,
   isLoggedIn: initialLoggedIn = false,
   onLogin,
   showActivitySections = false,
@@ -75,7 +64,7 @@ export function EventLandingPage({
   const [claimingMaterialId, setClaimingMaterialId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const isLoggedInRef = useRef(false);
-  const materials = eventData.materials ?? [];
+  const materials = eventData?.materials ?? [];
   const isGeneralLanding = !showActivitySections;
 
   useEffect(() => {
@@ -108,7 +97,7 @@ export function EventLandingPage({
 
     setClaimingMaterialId(materialId);
     try {
-      const result = await claimMaterial(materialId, eventData.id ?? null);
+      const result = await claimMaterial(materialId, eventData?.id ?? null);
       setDownloadedMaterials((current) => current.includes(materialId) ? current : [...current, materialId]);
       window.open(result.downloadUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
@@ -163,7 +152,7 @@ export function EventLandingPage({
         </div>
       )}
 
-      {showActivitySections && (
+      {showActivitySections && eventData && (
         <>
           {/* 顶部活动封面区域 - 深蓝渐变 */}
           <div
@@ -171,9 +160,9 @@ export function EventLandingPage({
               "relative bg-gradient-to-br from-primary via-primary/90 to-primary/80 text-primary-foreground",
               eventData.coverImage && "bg-cover bg-center",
             )}
-            style={eventData.coverImage ? { backgroundImage: `url("${eventData.coverImage}")` } : undefined}
+            style={eventData?.coverImage ? { backgroundImage: `url("${eventData.coverImage}")` } : undefined}
           >
-            {eventData.coverImage ? <div className="absolute inset-0 bg-primary/15" /> : null}
+            {eventData?.coverImage ? <div className="absolute inset-0 bg-primary/15" /> : null}
             {/* 装饰图案 */}
             <div className="absolute inset-0 overflow-hidden">
               <div className="absolute -top-20 -right-20 h-40 w-40 rounded-full bg-white/5" />
@@ -194,7 +183,7 @@ export function EventLandingPage({
 
               {/* 活动标题 */}
               <h1 className="mb-4 text-xl font-bold leading-tight text-balance">
-                {eventData.title}
+                {eventData?.title}
               </h1>
 
               {/* 活动信息 */}
@@ -202,20 +191,20 @@ export function EventLandingPage({
                 <div className="flex items-center gap-2">
                   <User className="h-4 w-4" />
                   <span>
-                    {eventData.speaker} · {eventData.speakerTitle}
+                    {eventData?.speaker} · {eventData?.speakerTitle}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4" />
-                  <span>{eventData.date}</span>
+                  <span>{eventData?.date}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4" />
-                  <span>{eventData.time}</span>
+                  <span>{eventData?.time}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <MapPin className="h-4 w-4" />
-                  <span>{eventData.location}</span>
+                  <span>{eventData?.location}</span>
                 </div>
               </div>
             </div>
@@ -230,7 +219,7 @@ export function EventLandingPage({
                   活动简介
                 </h2>
                 <p className="text-sm leading-relaxed text-muted-foreground">
-                  {eventData.description}
+                  {eventData?.description}
                 </p>
               </CardContent>
             </Card>
