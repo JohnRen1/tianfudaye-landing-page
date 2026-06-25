@@ -16,6 +16,7 @@ interface LoginModalProps {
 }
 
 export function LoginModal({ open, onOpenChange, onSuccess }: LoginModalProps) {
+
   const handleClose = () => {
     onOpenChange(false);
   };

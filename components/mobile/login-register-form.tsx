@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { sendCode, loginPhone } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
+import { hydrateClientAuthFromServer } from "@/lib/client-auth";
 
 interface LoginRegisterFormProps {
   compact?: boolean;
@@ -56,7 +57,12 @@ export function LoginRegisterForm({
   const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<number | null>(null);
 
-  // Clean up interval on unmount
+  useEffect(() => {
+    void hydrateClientAuthFromServer().then((loggedIn) => {
+      if (loggedIn) onSuccess?.();
+    });
+  }, [onSuccess]);
+
   useEffect(() => {
     return () => {
       if (timerRef.current !== null) {

@@ -25,6 +25,7 @@ export const createAppointment = adapter.createAppointment;
 export const listUserAppointments = adapter.listUserAppointments;
 export const createQaRecord = adapter.createQaRecord;
 export const claimMaterial = adapter.claimMaterial;
+export const listLandingMaterials = adapter.listLandingMaterials;
 export const getActivityLandingDetail = adapter.getActivityLandingDetail;
 export const trackQrScan = adapter.trackQrScan;
 export const verifyAndConsumeDevCode = adapter.verifyAndConsumeDevCode;

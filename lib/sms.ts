@@ -2,10 +2,6 @@ interface SmsSendResult {
   provider: 'dev' | 'juhe';
 }
 
-export interface SmsProviderResponse {
-  expiresInSeconds: number;
-}
-
 function getRequiredEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -24,20 +20,14 @@ export async function sendJuheSmsCode(params: {
 }): Promise<SmsSendResult> {
   const key = getRequiredEnv('JUHE_SMS_API_KEY');
   const tplId = getRequiredEnv('JUHE_SMS_TPL_ID');
-  const sign = process.env.JUHE_SMS_SIGN?.trim() || '';
 
   const form = new URLSearchParams();
   form.set('mobile', params.phone);
   form.set('tpl_id', tplId);
   form.set('key', key);
+  form.set('tpl_value', `#code#=${encodeURIComponent(params.code)}`);
 
-  const templateVars: Record<string, string> = sign
-    ? { '#code#': params.code, '#sign#': sign }
-    : { '#code#': params.code };
-
-  form.set('tpl_value', Object.entries(templateVars).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&'));
-
-  const response = await fetch('https://v.juhe.cn/sms/send', {
+  const response = await fetch('http://v.juhe.cn/sms/send', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',

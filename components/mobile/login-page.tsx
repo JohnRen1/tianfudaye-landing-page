@@ -1,9 +1,12 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, FileText, Shield, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { LoginRegisterForm } from "./login-register-form";
+import { hydrateClientAuthFromServer } from "@/lib/client-auth";
 
 interface LoginPageProps {
   onBack?: () => void;
@@ -11,6 +14,17 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ onBack, onSuccess }: LoginPageProps) {
+  const router = useRouter();
+
+  useEffect(() => {
+    void hydrateClientAuthFromServer().then((loggedIn) => {
+      if (loggedIn) {
+        onSuccess?.();
+        router.replace("/");
+      }
+    });
+  }, [onSuccess, router]);
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-primary/10 via-background to-secondary/40 px-4 pb-8 pt-4">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-br from-primary via-primary/90 to-primary/70" />

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -23,6 +24,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { hydrateClientAuthFromServer, isClientLoggedIn } from "@/lib/client-auth";
+import { LoginModal } from "./login-modal";
 
 const valueItems = [
   "识别发票合规风险",
@@ -45,25 +48,46 @@ const dimensions = [
 
 export function RiskAssessmentStartPage() {
   const router = useRouter();
+  const [showLoginModal, setShowLoginModal] = useState(false);
+
+  useEffect(() => {
+    void hydrateClientAuthFromServer();
+  }, []);
+
+  const startAssessment = () => {
+    if (!isClientLoggedIn()) {
+      setShowLoginModal(true);
+      return;
+    }
+    router.push("/risk-assessment/quiz");
+  };
+
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.push("/");
+  };
 
   return (
     <div className="min-h-screen bg-background pb-28">
       <div className="relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
-        <div className="absolute -right-20 top-8 h-44 w-44 rounded-full border border-white/15" />
-        <div className="absolute -right-10 top-18 h-28 w-28 rounded-full border border-white/20" />
-        <div className="absolute bottom-8 right-12 h-16 w-16 rounded-full bg-accent/20 blur-sm" />
+        <div className="absolute -right-20 top-5 h-44 w-44 rounded-full border border-white/15" />
+        <div className="absolute -right-8 top-16 h-24 w-24 rounded-full border border-white/20" />
+        <div className="absolute bottom-5 right-12 h-16 w-16 rounded-full bg-accent/20 blur-sm" />
         <div className="relative">
           <Button
             variant="ghost"
             size="icon"
             className="mb-6 rounded-full text-white hover:bg-white/10 hover:text-white"
-            onClick={() => router.push("/")}
+            onClick={handleBack}
             aria-label="返回落地页"
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
 
-          <div className="mb-5 flex items-center gap-3">
+          <div className="flex items-center gap-3">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/12 shadow-inner backdrop-blur">
               <Radar className="h-7 w-7" />
             </div>
@@ -75,7 +99,7 @@ export function RiskAssessmentStartPage() {
             </div>
           </div>
 
-          <p className="max-w-[300px] text-sm leading-relaxed text-white/80">
+          <p className="mt-4 max-w-[300px] text-sm leading-relaxed text-white/80">
             3-5 分钟完成，获取企业风险初步报告
           </p>
 
@@ -170,13 +194,22 @@ export function RiskAssessmentStartPage() {
           </div>
           <Button
             className="h-12 w-full rounded-xl bg-accent text-base font-semibold text-accent-foreground hover:bg-accent/90"
-            onClick={() => router.push("/risk-assessment/quiz")}
+            onClick={startAssessment}
           >
             开始测评
             <ChevronRight className="ml-1 h-5 w-5" />
           </Button>
         </div>
       </div>
+
+      <LoginModal
+        open={showLoginModal}
+        onOpenChange={setShowLoginModal}
+        onSuccess={() => {
+          setShowLoginModal(false);
+          router.push("/risk-assessment/quiz");
+        }}
+      />
     </div>
   );
 }

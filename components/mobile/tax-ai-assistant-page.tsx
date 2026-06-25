@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
@@ -21,9 +21,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { LoginModal } from "./login-modal";
-import { sendMessage } from "@/lib/api/ai-chat";
+import { sendMessageStream } from "@/lib/api/ai-chat";
 import type { AiAnswerBodyDTO, ChatMessageDTO } from "@/lib/contracts/ai-chat";
-import { RISK_LEVEL_LABEL, type RiskLevel } from "@/lib/contracts/shared";
+import { hydrateClientAuthFromServer, isClientLoggedIn } from "@/lib/client-auth";
 
 const quickQuestions = [
   "发票合规怎么判断？",
@@ -33,104 +33,227 @@ const quickQuestions = [
 ];
 const disclaimer =
   "以上内容由 AI 根据现有知识库生成，仅供参考，不构成正式税务意见。具体处理方案需结合企业实际情况，并由专业税务顾问进一步确认。";
+const showAiDebug = process.env.NEXT_PUBLIC_AI_DEBUG === "true";
+const CHAT_STATE_STORAGE_KEY = "tax-ai-chat-state-v1";
 
-function riskMeta(level: RiskLevel) {
-  if (level === "critical")
-    return {
-      label: RISK_LEVEL_LABEL.critical,
-      box: "bg-destructive/10 text-destructive border-destructive/20",
-      dot: "bg-destructive",
-      isHigh: true,
-    };
-  if (level === "high")
-    return {
-      label: RISK_LEVEL_LABEL.high,
-      box: "bg-destructive/10 text-destructive border-destructive/20",
-      dot: "bg-destructive",
-      isHigh: true,
-    };
-  if (level === "medium")
-    return {
-      label: RISK_LEVEL_LABEL.medium,
-      box: "bg-warning/10 text-warning border-warning/20",
-      dot: "bg-warning",
-      isHigh: false,
-    };
-  return {
-    label: RISK_LEVEL_LABEL.low,
-    box: "bg-primary/10 text-primary border-primary/20",
-    dot: "bg-primary",
-    isHigh: false,
+interface StoredChatState {
+  messages: ChatMessageDTO[];
+  sessionId: string | null;
+  inputValue: string;
+  savedAt: number;
+}
+
+function isStoredChatState(value: unknown): value is StoredChatState {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return Array.isArray(record.messages) && "sessionId" in record && typeof record.savedAt === "number";
+}
+
+function renderInlineMarkdown(text: string): ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return (
+        <strong key={`${part}-${index}`} className="font-semibold text-foreground">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return <span key={`${part}-${index}`}>{part}</span>;
+  });
+}
+
+function MarkdownAnswer({ content }: { content: string }) {
+  const lines = content.split(/\r?\n/);
+  const blocks: ReactNode[] = [];
+  let listItems: string[] = [];
+  let orderedItems: string[] = [];
+  let paragraphLines: string[] = [];
+
+  const flushList = () => {
+    if (listItems.length === 0) return;
+    const items = listItems;
+    listItems = [];
+    blocks.push(
+      <ul key={`ul-${blocks.length}`} className="space-y-1 pl-4 text-muted-foreground">
+        {items.map((item, index) => (
+          <li key={`${item}-${index}`} className="list-disc leading-relaxed">
+            {renderInlineMarkdown(item)}
+          </li>
+        ))}
+      </ul>,
+    );
   };
+
+  const flushOrderedList = () => {
+    if (orderedItems.length === 0) return;
+    const items = orderedItems;
+    orderedItems = [];
+    blocks.push(
+      <ol key={`ol-${blocks.length}`} className="space-y-1 pl-4 text-muted-foreground">
+        {items.map((item, index) => (
+          <li key={`${item}-${index}`} className="list-decimal leading-relaxed">
+            {renderInlineMarkdown(item)}
+          </li>
+        ))}
+      </ol>,
+    );
+  };
+
+  const flushParagraph = () => {
+    if (paragraphLines.length === 0) return;
+    const paragraph = paragraphLines.join(" ");
+    paragraphLines = [];
+    blocks.push(
+      <p key={`p-${blocks.length}`} className="leading-relaxed text-muted-foreground">
+        {renderInlineMarkdown(paragraph)}
+      </p>,
+    );
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+
+    if (!line) {
+      flushParagraph();
+      flushList();
+      flushOrderedList();
+      continue;
+    }
+
+    if (/^-{3,}$/.test(line)) {
+      flushParagraph();
+      flushList();
+      flushOrderedList();
+      blocks.push(<hr key={`hr-${blocks.length}`} className="border-border" />);
+      continue;
+    }
+
+    const headingMatch = /^(#{1,4})\s+(.+)$/.exec(line);
+    if (headingMatch) {
+      flushParagraph();
+      flushList();
+      flushOrderedList();
+      const level = headingMatch[1].length;
+      const className =
+        level <= 2
+          ? "pt-1 text-base font-semibold text-foreground"
+          : "pt-1 text-sm font-semibold text-foreground";
+      blocks.push(
+        <h4 key={`h-${blocks.length}`} className={className}>
+          {renderInlineMarkdown(headingMatch[2])}
+        </h4>,
+      );
+      continue;
+    }
+
+    const orderedMatch = /^\d+\.\s+(.+)$/.exec(line);
+    if (orderedMatch) {
+      flushParagraph();
+      flushList();
+      orderedItems.push(orderedMatch[1]);
+      continue;
+    }
+
+    const bulletMatch = /^[-*]\s+(.+)$/.exec(line);
+    if (bulletMatch) {
+      flushParagraph();
+      flushOrderedList();
+      listItems.push(bulletMatch[1]);
+      continue;
+    }
+
+    flushList();
+    flushOrderedList();
+    paragraphLines.push(line);
+  }
+
+  flushParagraph();
+  flushList();
+  flushOrderedList();
+
+  return <div className="space-y-3">{blocks}</div>;
 }
 
 function AiAnswerCard({
   answer,
-  onProtectedClick,
+  onAppointmentClick,
+  onMaterialsClick,
 }: {
   answer: AiAnswerBodyDTO;
-  onProtectedClick: () => void;
+  onAppointmentClick: () => void;
+  onMaterialsClick: () => void;
 }) {
-  const meta = riskMeta(answer.riskLevel);
+  useEffect(() => {
+    if (showAiDebug && answer.citations && answer.citations.length > 0) {
+      console.debug("[tax-ai] reference citations", answer.citations);
+    }
+  }, [answer.citations]);
+
   return (
-    <Card className={cn("border-0 bg-card shadow-sm", meta.isHigh && "ring-1 ring-destructive/20")}>
-      <CardContent className="p-4">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+    <div className="space-y-3">
+      <Card className="border-0 bg-card shadow-sm">
+        <CardContent className="p-4">
+          <div className="mb-3 flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10">
               <Bot className="h-4 w-4 text-primary" />
             </div>
             <span className="text-sm font-semibold">AI 知识库回答</span>
           </div>
-          <Badge variant="outline" className={cn("rounded-full", meta.box)}>
-            <span className={cn("mr-1.5 h-1.5 w-1.5 rounded-full", meta.dot)} />
-            {meta.label}
-          </Badge>
-        </div>
-        <div className="space-y-3 text-sm">
-          <section>
-            <h3 className="mb-1 font-semibold text-foreground">问题理解</h3>
-            <p className="leading-relaxed text-muted-foreground">{answer.questionUnderstanding}</p>
-          </section>
-          <section>
-            <h3 className="mb-1 font-semibold text-foreground">初步判断</h3>
-            <p className="leading-relaxed text-muted-foreground">{answer.initialJudgment}</p>
-          </section>
-          <section>
-            <h3 className="mb-1 font-semibold text-foreground">涉及风险</h3>
-            <ul className="space-y-1 text-muted-foreground">
-              {answer.involvedRisks.map((item, idx) => (
-                <li key={idx} className="flex gap-2">
-                  <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-destructive/70" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </section>
-          <section>
-            <h3 className="mb-1 font-semibold text-foreground">处理建议</h3>
-            <ul className="space-y-1 text-muted-foreground">
-              {answer.suggestions.map((item, idx) => (
-                <li key={idx} className="flex gap-2">
-                  <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-primary/70" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </section>
-          <div className="space-y-2 rounded-xl bg-secondary/60 p-3">
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">风险等级</span>
-              <span className={cn("font-semibold", meta.isHigh ? "text-destructive" : "text-primary")}>
-                {meta.label}
-              </span>
-            </div>
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">是否建议人工顾问介入</span>
-              <span className="font-semibold text-destructive">
-                {answer.advisorRecommended ? "建议介入" : "暂不需要"}
-              </span>
-            </div>
+          <div className="space-y-3 text-sm">
+            {answer.answerText ? (
+              <section>
+                <h3 className="mb-1 font-semibold text-foreground">回答内容</h3>
+                <MarkdownAnswer content={answer.answerText} />
+              </section>
+            ) : (
+              <>
+                <section>
+                  <h3 className="mb-1 font-semibold text-foreground">问题理解</h3>
+                  <p className="leading-relaxed text-muted-foreground">{answer.questionUnderstanding}</p>
+                </section>
+                <section>
+                  <h3 className="mb-1 font-semibold text-foreground">初步判断</h3>
+                  <p className="leading-relaxed text-muted-foreground">{answer.initialJudgment}</p>
+                </section>
+                <section>
+                  <h3 className="mb-1 font-semibold text-foreground">涉及风险</h3>
+                  <ul className="space-y-1 text-muted-foreground">
+                    {answer.involvedRisks.map((item, idx) => (
+                      <li key={idx} className="flex gap-2">
+                        <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-destructive/70" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+                <section>
+                  <h3 className="mb-1 font-semibold text-foreground">处理建议</h3>
+                  <ul className="space-y-1 text-muted-foreground">
+                    {answer.suggestions.map((item, idx) => (
+                      <li key={idx} className="flex gap-2">
+                        <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-primary/70" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              </>
+            )}
+            <p className="rounded-xl bg-muted/70 p-3 text-xs leading-relaxed text-muted-foreground">
+              {disclaimer}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-0 bg-card shadow-sm">
+        <CardContent className="space-y-3 p-4 text-sm">
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-secondary/60 p-3">
+            <span className="text-muted-foreground">是否建议人工顾问介入</span>
+            <span className={cn("font-semibold", answer.advisorRecommended ? "text-destructive" : "text-primary")}>
+              {answer.advisorRecommended ? "建议介入" : "暂不需要"}
+            </span>
           </div>
           {answer.needsConfirmation && (
             <div className="rounded-xl border border-warning/20 bg-warning/10 p-3 text-warning">
@@ -141,7 +264,7 @@ function AiAnswerCard({
             <div className="grid grid-cols-2 gap-2">
               <Button
                 className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                onClick={onProtectedClick}
+                onClick={onAppointmentClick}
               >
                 <CalendarCheck className="mr-1.5 h-4 w-4" />
                 预约顾问解读
@@ -149,19 +272,16 @@ function AiAnswerCard({
               <Button
                 variant="outline"
                 className="rounded-xl border-primary/20 text-primary"
-                onClick={onProtectedClick}
+                onClick={onMaterialsClick}
               >
                 <BookOpen className="mr-1.5 h-4 w-4" />
                 查看相关资料
               </Button>
             </div>
           )}
-          <p className="rounded-xl bg-muted/70 p-3 text-xs leading-relaxed text-muted-foreground">
-            {disclaimer}
-          </p>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -199,6 +319,43 @@ export function TaxAiAssistantPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    void hydrateClientAuthFromServer().then((loggedIn) => {
+      if (loggedIn) setIsLoggedIn(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    const rawState = sessionStorage.getItem(CHAT_STATE_STORAGE_KEY);
+    if (!rawState) return;
+
+    try {
+      const parsed: unknown = JSON.parse(rawState);
+      if (!isStoredChatState(parsed)) return;
+      const completedMessages = parsed.messages.filter(
+        (message) => message.role === "user" || message.answer !== null,
+      );
+      setMessages(completedMessages);
+      setSessionId(parsed.sessionId);
+      setInputValue(parsed.inputValue);
+    } catch {
+      sessionStorage.removeItem(CHAT_STATE_STORAGE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    const completedMessages = messages.filter(
+      (message) => message.role === "user" || message.answer !== null,
+    );
+    const storedState: StoredChatState = {
+      messages: completedMessages,
+      sessionId,
+      inputValue,
+      savedAt: Date.now(),
+    };
+    sessionStorage.setItem(CHAT_STATE_STORAGE_KEY, JSON.stringify(storedState));
+  }, [inputValue, messages, sessionId]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
@@ -206,6 +363,16 @@ export function TaxAiAssistantPage() {
     if (isLoggedIn) return true;
     setShowLoginModal(true);
     return false;
+  };
+
+  const openAppointment = () => {
+    if (!requireLogin()) return;
+    router.push("/appointment");
+  };
+
+  const openMaterials = () => {
+    if (!requireLogin()) return;
+    router.push("/materials");
   };
 
   const submitQuestion = async (question: string) => {
@@ -225,18 +392,42 @@ export function TaxAiAssistantPage() {
     setErrorMessage(null);
 
     try {
-      const response = await sendMessage(text, sessionId, activityId);
-
-      // Persist sessionId for multi-turn conversation
-      setSessionId(response.sessionId);
-
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === aiMsgId
-            ? { ...msg, answer: response.answer, qaRecordId: response.qaRecordId }
-            : msg,
-        ),
-      );
+      let streamedText = "";
+      await sendMessageStream(text, sessionId, activityId, {
+        onDelta: (delta) => {
+          streamedText += delta;
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === aiMsgId
+                ? {
+                    ...msg,
+                    answer: {
+                      answerText: streamedText,
+                      questionUnderstanding: `您询问的是：${text.slice(0, 80)}${text.length > 80 ? "..." : ""}`,
+                      initialJudgment: streamedText,
+                      involvedRisks: [],
+                      suggestions: [],
+                      riskLevel: "low",
+                      advisorRecommended: false,
+                      needsConfirmation: false,
+                      knowledgeItemIds: [],
+                    },
+                  }
+                : msg,
+            ),
+          );
+        },
+        onDone: (response) => {
+          setSessionId(response.sessionId);
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === aiMsgId
+                ? { ...msg, answer: response.answer, qaRecordId: response.qaRecordId }
+                : msg,
+            ),
+          );
+        },
+      });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "请求失败，请稍后重试";
@@ -248,27 +439,46 @@ export function TaxAiAssistantPage() {
     }
   };
 
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.push("/");
+  };
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <header className="sticky top-0 z-20 border-b border-border bg-card/95 px-4 py-3 backdrop-blur">
-        <div className="flex items-center gap-3">
+      <header className="relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-6 pt-4 text-primary-foreground">
+        <div className="absolute -right-20 top-5 h-44 w-44 rounded-full border border-white/15" />
+        <div className="absolute -right-8 top-16 h-24 w-24 rounded-full border border-white/20" />
+        <div className="absolute bottom-5 right-12 h-16 w-16 rounded-full bg-accent/20 blur-sm" />
+        <div className="relative">
           <Button
             variant="ghost"
             size="icon"
-            className="h-9 w-9 rounded-full"
+            className="mb-6 rounded-full text-white hover:bg-white/10 hover:text-white"
             aria-label="返回"
-            onClick={() => router.push("/")}
+            onClick={handleBack}
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10">
-            <Sparkles className="h-5 w-5 text-primary" />
+
+          <div className="flex items-center gap-3">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/12 shadow-inner backdrop-blur">
+              <Sparkles className="h-7 w-7" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <Badge className="mb-2 bg-accent text-accent-foreground hover:bg-accent/90">
+                知识库
+              </Badge>
+              <h1 className="text-2xl font-bold tracking-tight">AI 税务助手</h1>
+            </div>
           </div>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-base font-bold">AI 税务助手</h1>
-            <p className="text-xs text-muted-foreground">基于财税知识库，仅供参考</p>
-          </div>
-          <Badge className="bg-success/10 text-success hover:bg-success/10">知识库</Badge>
+
+          <p className="mt-4 max-w-[300px] text-sm leading-relaxed text-white/80">
+            基于财税知识库快速答疑，仅供参考，不构成正式税务意见
+          </p>
         </div>
       </header>
 
@@ -326,7 +536,11 @@ export function TaxAiAssistantPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   {message.answer ? (
-                    <AiAnswerCard answer={message.answer} onProtectedClick={requireLogin} />
+                    <AiAnswerCard
+                      answer={message.answer}
+                      onAppointmentClick={openAppointment}
+                      onMaterialsClick={openMaterials}
+                    />
                   ) : (
                     <AiLoadingCard />
                   )}

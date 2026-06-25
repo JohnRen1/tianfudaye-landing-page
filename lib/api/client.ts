@@ -6,6 +6,7 @@
  */
 
 import type { ApiResponse } from '../contracts/shared';
+import { getClientAuthToken } from '../client-auth';
 
 const TOKEN_KEY = 'user-token';
 
@@ -23,7 +24,7 @@ export class ApiError extends Error {
 
 function getToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem(TOKEN_KEY);
+  return getClientAuthToken();
 }
 
 function buildHeaders(extra?: HeadersInit): Headers {

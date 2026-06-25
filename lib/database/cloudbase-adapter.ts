@@ -120,13 +120,16 @@ export const createQaRecord: typeof SupabaseAdapter.createQaRecord = async () =>
 export const claimMaterial: typeof SupabaseAdapter.claimMaterial = async () =>
   notImplemented('claimMaterial');
 
+export const listLandingMaterials: typeof SupabaseAdapter.listLandingMaterials = async () =>
+  notImplemented('listLandingMaterials');
+
 export const getActivityLandingDetail: typeof SupabaseAdapter.getActivityLandingDetail = async () =>
   notImplemented('getActivityLandingDetail');
 
 export const trackQrScan: typeof SupabaseAdapter.trackQrScan = async () =>
   notImplemented('trackQrScan');
 
-export const verifyAndConsumeDevCode: typeof SupabaseAdapter.verifyAndConsumeDevCode = () =>
+export const verifyAndConsumeDevCode: typeof SupabaseAdapter.verifyAndConsumeDevCode = async () =>
   notImplemented('verifyAndConsumeDevCode');
 
 export const sendDevPhoneCode: typeof SupabaseAdapter.sendDevPhoneCode = async () =>

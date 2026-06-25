@@ -1,12 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  BarChart3,
   BookOpen,
   CheckCircle,
-  ChevronRight,
   ClipboardCheck,
   Download,
   FileSpreadsheet,
@@ -21,170 +20,161 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-
-type MaterialCategory = "courseware" | "policy" | "checklist" | "case";
-
-type MaterialStatus = "available" | "claimed" | "needs_company_info";
-
-interface MaterialItem {
-  id: number;
-  category: MaterialCategory;
-  name: string;
-  type: string;
-  description: string;
-  format: "PDF" | "Excel";
-  downloads: number;
-  needsCompanyInfo: boolean;
-  status: MaterialStatus;
-}
+import { claimMaterial, getMaterials } from "@/lib/api/materials";
+import { hydrateClientAuthFromServer, isClientLoggedIn } from "@/lib/client-auth";
+import { LoginModal } from "./login-modal";
+import {
+  FILE_FORMAT_LABEL,
+  MATERIAL_TYPE_TAB_LABEL,
+  type FileFormat,
+  type MaterialClaimStatus,
+  type MaterialLandingItemDTO,
+  type MaterialType,
+} from "@/lib/contracts/material";
 
 const categoryTabs: Array<{
-  value: MaterialCategory;
+  value: MaterialType;
   label: string;
   icon: typeof FileText;
 }> = [
-  { value: "courseware", label: "沙龙课件", icon: BookOpen },
-  { value: "policy", label: "政策解读", icon: ScrollText },
-  { value: "checklist", label: "自查表", icon: ClipboardCheck },
-  { value: "case", label: "案例资料", icon: FolderOpen },
+  { value: "courseware", label: MATERIAL_TYPE_TAB_LABEL.courseware, icon: BookOpen },
+  { value: "policy", label: MATERIAL_TYPE_TAB_LABEL.policy, icon: ScrollText },
+  { value: "checklist", label: MATERIAL_TYPE_TAB_LABEL.checklist, icon: ClipboardCheck },
+  { value: "case", label: MATERIAL_TYPE_TAB_LABEL.case, icon: FolderOpen },
 ];
 
-const initialMaterials: MaterialItem[] = [
-  {
-    id: 1,
-    category: "courseware",
-    name: "企业所得税合规与风险防控沙龙课件",
-    type: "课程课件",
-    description: "覆盖企业所得税汇算清缴、税前扣除、风险事项识别等核心内容。",
-    format: "PDF",
-    downloads: 238,
-    needsCompanyInfo: false,
-    status: "available",
-  },
-  {
-    id: 2,
-    category: "courseware",
-    name: "沙龙重点问题答疑纪要",
-    type: "答疑整理",
-    description: "整理现场高频问题与顾问答复，便于会后复盘与内部培训。",
-    format: "PDF",
-    downloads: 126,
-    needsCompanyInfo: false,
-    status: "claimed",
-  },
-  {
-    id: 3,
-    category: "policy",
-    name: "2026 企业所得税政策变化解读",
-    type: "政策资料",
-    description: "按业务场景拆解最新政策口径，标注企业常见理解误区。",
-    format: "PDF",
-    downloads: 189,
-    needsCompanyInfo: false,
-    status: "available",
-  },
-  {
-    id: 4,
-    category: "policy",
-    name: "研发费用加计扣除实务指南",
-    type: "专题指南",
-    description: "说明归集口径、辅助账管理、留存备查材料与风险提醒。",
-    format: "PDF",
-    downloads: 97,
-    needsCompanyInfo: true,
-    status: "needs_company_info",
-  },
-  {
-    id: 5,
-    category: "checklist",
-    name: "发票合规风险自查表",
-    type: "工具表",
-    description: "用于快速检查发票取得、开具、入账和抵扣环节的合规风险。",
-    format: "Excel",
-    downloads: 312,
-    needsCompanyInfo: false,
-    status: "available",
-  },
-  {
-    id: 6,
-    category: "checklist",
-    name: "企业所得税税前扣除自查清单",
-    type: "工具表",
-    description: "按费用类型列出扣除条件、凭证要求和常见调整事项。",
-    format: "Excel",
-    downloads: 205,
-    needsCompanyInfo: true,
-    status: "needs_company_info",
-  },
-];
-
-function getMaterialIcon(format: MaterialItem["format"]) {
-  return format === "Excel" ? FileSpreadsheet : FileText;
+function getMaterialIcon(format: FileFormat) {
+  return format === "xlsx" ? FileSpreadsheet : FileText;
 }
 
-function getActionCopy(status: MaterialStatus) {
+function getActionCopy(status: MaterialClaimStatus) {
   if (status === "claimed") return "已领取";
   if (status === "needs_company_info") return "补充信息后领取";
+  if (status === "needs_login") return "登录后领取";
   return "领取资料";
 }
 
-export function MaterialsPage() {
-  const [activeCategory, setActiveCategory] = useState<MaterialCategory>("courseware");
-  const [materials, setMaterials] = useState(initialMaterials);
+function formatFileSize(bytes: number | null): string {
+  if (!bytes || bytes <= 0) return "大小未知";
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
 
-  // MVP 演示阶段默认视为已登录，跳过登录弹窗/登录页拦截。
-  // 后续恢复登录时，可将该值改为真实 auth 状态，并在 handleClaim 中未登录时唤起 LoginModal 或跳转 /login。
-  const isLoggedIn = true;
+export function MaterialsPage() {
+  const router = useRouter();
+  const [activeCategory, setActiveCategory] = useState<MaterialType>("courseware");
+  const [materials, setMaterials] = useState<MaterialLandingItemDTO[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [claimingId, setClaimingId] = useState<string | null>(null);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [pendingMaterial, setPendingMaterial] = useState<MaterialLandingItemDTO | null>(null);
 
   const visibleMaterials = useMemo(
     () => materials.filter((material) => material.category === activeCategory),
     [activeCategory, materials]
   );
 
-  const totalClaimed = materials.filter((material) => material.status === "claimed").length;
+  const totalClaimed = materials.filter((material) => material.claimStatus === "claimed").length;
 
-  const handleClaim = (materialId: number) => {
-    if (!isLoggedIn) {
+  const loadMaterials = async () => {
+    setLoading(true);
+    setErrorMessage(null);
+    try {
+      const result = await getMaterials({ page: 1, pageSize: 50 });
+      setMaterials(result.items);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "资料加载失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void hydrateClientAuthFromServer().then(() => {
+      void loadMaterials();
+    });
+  }, []);
+
+  const handleClaim = async (material: MaterialLandingItemDTO) => {
+    if (material.claimStatus === "claimed") return;
+    if (material.claimStatus === "needs_login" || !isClientLoggedIn()) {
+      setPendingMaterial(material);
+      setShowLoginModal(true);
+      return;
+    }
+    if (material.claimStatus === "needs_company_info") {
+      window.alert("该资料需要先补充企业信息后才能领取。");
       return;
     }
 
-    setMaterials((currentMaterials) =>
-      currentMaterials.map((material) => {
-        if (material.id !== materialId || material.status !== "available") {
-          return material;
-        }
+    setClaimingId(material.id);
+    try {
+      const result = await claimMaterial(material.id, null);
+      setMaterials((currentMaterials) =>
+        currentMaterials.map((item) =>
+          item.id === material.id
+            ? { ...item, downloads: item.downloads + 1, claimStatus: "claimed" }
+            : item,
+        ),
+      );
+      window.open(result.downloadUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "领取资料失败");
+    } finally {
+      setClaimingId(null);
+    }
+  };
 
-        return {
-          ...material,
-          downloads: material.downloads + 1,
-          status: "claimed",
-        };
-      })
-    );
+  const handleLoginSuccess = () => {
+    setShowLoginModal(false);
+    void loadMaterials();
+    if (pendingMaterial) {
+      const material = pendingMaterial;
+      setPendingMaterial(null);
+      void handleClaim({ ...material, claimStatus: "available" });
+    }
+  };
+
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.push("/");
   };
 
   return (
     <div className="min-h-screen bg-background pb-28">
       <div className="relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-6 pt-4 text-primary-foreground">
-        <div className="absolute -right-16 -top-16 h-36 w-36 rounded-full bg-white/10" />
-        <div className="absolute bottom-6 right-10 h-14 w-14 rounded-full bg-accent/25" />
+        <div className="absolute -right-20 top-5 h-44 w-44 rounded-full border border-white/15" />
+        <div className="absolute -right-8 top-16 h-24 w-24 rounded-full border border-white/20" />
+        <div className="absolute bottom-5 right-12 h-16 w-16 rounded-full bg-accent/20 blur-sm" />
         <div className="relative">
           <Button
             variant="ghost"
             size="icon"
-            className="mb-5 rounded-full text-white hover:bg-white/10 hover:text-white"
+            className="mb-6 rounded-full text-white hover:bg-white/10 hover:text-white"
             aria-label="返回"
+            onClick={handleBack}
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
 
-          <Badge className="mb-3 bg-accent text-accent-foreground hover:bg-accent/90">
-            资料领取
-          </Badge>
-          <h1 className="text-2xl font-bold tracking-tight">沙龙资料领取</h1>
+          <div className="flex items-center gap-3">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/12 shadow-inner backdrop-blur">
+              <FolderOpen className="h-7 w-7" />
+            </div>
+            <div>
+              <Badge className="mb-2 bg-accent text-accent-foreground hover:bg-accent/90">
+                资料领取
+              </Badge>
+              <h1 className="text-2xl font-bold tracking-tight">沙龙资料领取</h1>
+            </div>
+          </div>
           <div className="mt-3 flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-sm text-white/82 backdrop-blur">
             <Info className="h-4 w-4 shrink-0" />
-            <span>来自：企业所得税合规沙龙</span>
+            <span>通用财税资料，可按分类领取</span>
           </div>
         </div>
       </div>
@@ -202,7 +192,7 @@ export function MaterialsPage() {
             </div>
             <div>
               <p className="text-lg font-bold text-primary">
-                {materials.filter((material) => material.needsCompanyInfo).length}
+                {materials.filter((material) => material.needCompanyInfo).length}
               </p>
               <p className="text-xs text-muted-foreground">需补充信息</p>
             </div>
@@ -212,10 +202,10 @@ export function MaterialsPage() {
 
       <Tabs
         value={activeCategory}
-        onValueChange={(value) => setActiveCategory(value as MaterialCategory)}
+        onValueChange={(value) => setActiveCategory(value as MaterialType)}
         className="px-4 pt-4"
       >
-        <TabsList className="h-auto w-full justify-start gap-2 overflow-x-auto rounded-2xl bg-secondary/70 p-2">
+        <TabsList className="grid h-auto w-full grid-cols-4 gap-1 rounded-2xl bg-secondary/70 p-1.5">
           {categoryTabs.map((tab) => {
             const Icon = tab.icon;
 
@@ -223,9 +213,9 @@ export function MaterialsPage() {
               <TabsTrigger
                 key={tab.value}
                 value={tab.value}
-                className="min-w-fit rounded-xl px-3 py-2 text-xs data-[state=active]:bg-card data-[state=active]:text-primary"
+                className="min-w-0 justify-center gap-1 rounded-xl px-1 py-1.5 text-[10px] leading-none data-[state=active]:bg-card data-[state=active]:text-primary"
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-3.5 w-3.5 shrink-0" />
                 {tab.label}
               </TabsTrigger>
             );
@@ -234,11 +224,29 @@ export function MaterialsPage() {
 
         {categoryTabs.map((tab) => (
           <TabsContent key={tab.value} value={tab.value} className="mt-4 space-y-3">
-            {visibleMaterials.length > 0 ? (
+            {loading ? (
+              <Card className="border-0 shadow-sm">
+                <CardContent className="px-6 py-12 text-center text-sm text-muted-foreground">
+                  正在加载资料...
+                </CardContent>
+              </Card>
+            ) : errorMessage ? (
+              <Card className="border-0 shadow-sm">
+                <CardContent className="space-y-3 px-6 py-12 text-center">
+                  <p className="text-sm text-destructive">{errorMessage}</p>
+                  <Button variant="outline" className="rounded-xl" onClick={() => void loadMaterials()}>
+                    重新加载
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : visibleMaterials.length > 0 ? (
               visibleMaterials.map((material) => {
                 const Icon = getMaterialIcon(material.format);
-                const isClaimed = material.status === "claimed";
-                const needsInfo = material.status === "needs_company_info";
+                const isClaimed = material.claimStatus === "claimed";
+                const needsInfo = material.claimStatus === "needs_company_info";
+                const isNeedsLogin = material.claimStatus === "needs_login";
+                const isClaiming = claimingId === material.id;
+                const formatLabel = FILE_FORMAT_LABEL[material.format];
 
                 return (
                   <Card key={material.id} className="border-0 shadow-sm">
@@ -247,23 +255,23 @@ export function MaterialsPage() {
                         <div
                           className={cn(
                             "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
-                            material.format === "Excel" ? "bg-success/10" : "bg-primary/10"
+                            material.format === "xlsx" ? "bg-success/10" : "bg-primary/10"
                           )}
                         >
                           <Icon
                             className={cn(
                               "h-5 w-5",
-                              material.format === "Excel" ? "text-success" : "text-primary"
+                              material.format === "xlsx" ? "text-success" : "text-primary"
                             )}
                           />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="mb-1 flex items-center gap-2">
                             <Badge variant="outline" className="rounded-md px-1.5 py-0 text-[10px]">
-                              {material.type}
+                              {material.subType ?? MATERIAL_TYPE_TAB_LABEL[material.category]}
                             </Badge>
                             <Badge className="rounded-md bg-secondary px-1.5 py-0 text-[10px] text-secondary-foreground hover:bg-secondary">
-                              {material.format}
+                              {formatLabel}
                             </Badge>
                           </div>
                           <h2 className="text-base font-semibold leading-snug text-foreground">
@@ -279,22 +287,22 @@ export function MaterialsPage() {
                       <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <Download className="h-3.5 w-3.5" />
-                          下载 {material.downloads} 次
+                          下载 {material.downloads} 次 · {formatFileSize(material.fileSizeBytes)}
                         </span>
                         <span
                           className={cn(
                             "flex items-center gap-1 rounded-full px-2 py-1",
-                            material.needsCompanyInfo
+                            material.needCompanyInfo
                               ? "bg-warning/10 text-warning"
                               : "bg-success/10 text-success"
                           )}
                         >
-                          {material.needsCompanyInfo ? (
+                          {material.needCompanyInfo ? (
                             <LockKeyhole className="h-3.5 w-3.5" />
                           ) : (
                             <CheckCircle className="h-3.5 w-3.5" />
                           )}
-                          {material.needsCompanyInfo ? "需要补充企业信息" : "无需补充信息"}
+                          {material.needCompanyInfo ? "需要补充企业信息" : "无需补充信息"}
                         </span>
                       </div>
 
@@ -302,18 +310,18 @@ export function MaterialsPage() {
                         className={cn(
                           "h-10 w-full rounded-xl",
                           isClaimed && "border-success/20 bg-success/10 text-success hover:bg-success/10",
-                          needsInfo && "bg-primary text-primary-foreground hover:bg-primary/90",
-                          material.status === "available" &&
+                          (needsInfo || isNeedsLogin) && "bg-primary text-primary-foreground hover:bg-primary/90",
+                          material.claimStatus === "available" &&
                             "bg-accent text-accent-foreground hover:bg-accent/90"
                         )}
                         variant={isClaimed ? "outline" : "default"}
-                        disabled={isClaimed}
-                        onClick={() => handleClaim(material.id)}
+                        disabled={isClaimed || isClaiming}
+                        onClick={() => void handleClaim(material)}
                       >
                         {isClaimed && <CheckCircle className="mr-2 h-4 w-4" />}
-                        {!isClaimed && !needsInfo && <Download className="mr-2 h-4 w-4" />}
-                        {needsInfo && <LockKeyhole className="mr-2 h-4 w-4" />}
-                        {getActionCopy(material.status)}
+                        {!isClaimed && !needsInfo && !isNeedsLogin && <Download className="mr-2 h-4 w-4" />}
+                        {(needsInfo || isNeedsLogin) && <LockKeyhole className="mr-2 h-4 w-4" />}
+                        {isClaiming ? "领取中..." : getActionCopy(material.claimStatus)}
                       </Button>
                     </CardContent>
                   </Card>
@@ -336,15 +344,11 @@ export function MaterialsPage() {
         ))}
       </Tabs>
 
-      <div className="fixed bottom-0 left-0 right-0 border-t border-border bg-card/95 p-4 shadow-lg backdrop-blur">
-        <div className="mx-auto max-w-[390px]">
-          <Button className="h-12 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90">
-            <BarChart3 className="mr-2 h-5 w-5" />
-            做一次企业财税风险测评，获取专属报告
-            <ChevronRight className="ml-1 h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+      <LoginModal
+        open={showLoginModal}
+        onOpenChange={setShowLoginModal}
+        onSuccess={handleLoginSuccess}
+      />
     </div>
   );
 }

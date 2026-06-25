@@ -84,8 +84,8 @@ export const APPOINTMENT_STATUS_LABEL: Record<AppointmentStatus, string> = {
  *
  * 对应落地页 app/appointment/page.tsx 的 FormState。
  *
- * 必填字段（4 个）：name / phone / topic / description
- * 选填字段（5 个）：company / industry / contactTime / wechat / uploadIntent
+ * 必填字段（7 个）：name / phone / topic / description / company / industry / contactTime
+ * 选填字段（2 个）：wechat / uploadIntent
  *
  * 服务端生成字段（不在此 DTO 中）：
  *   - id        — UUID 主键
@@ -119,15 +119,15 @@ export interface AppointmentCreateDTO {
   topic: AppointmentTopic;
   /** 必填：问题描述 */
   description: string;
-  /** 选填：企业名称（nullable，已登录用户可由服务端预填，前端仍可覆写） */
-  company?: string;
-  /** 选填：所属行业 */
-  industry?: string;
+  /** 必填：企业名称 */
+  company: string;
+  /** 必填：所属行业 */
+  industry: string;
   /**
-   * 选填：方便联系时间（自由文本，如 '工作日下午'）。
+   * 必填：方便联系时间（自由文本，如 '工作日下午'）。
    * 保留为自由文本以兼容前端选项枚举（contactTimes 常量）。
    */
-  contactTime?: string;
+  contactTime: string;
   /** 选填：微信号 */
   wechat?: string;
   /**

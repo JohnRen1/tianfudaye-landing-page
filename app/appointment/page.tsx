@@ -79,6 +79,9 @@ function AppointmentForm() {
     else if (!/^1\d{10}$/.test(form.phone)) nextErrors.phone = "请输入 11 位有效手机号";
     if (!form.topic) nextErrors.topic = "请选择咨询主题";
     if (!form.description.trim()) nextErrors.description = "请填写问题描述";
+    if (!form.company.trim()) nextErrors.company = "请填写企业名称";
+    if (!form.industry) nextErrors.industry = "请选择所属行业";
+    if (!form.contactTime) nextErrors.contactTime = "请选择方便联系时间";
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
@@ -102,9 +105,9 @@ function AppointmentForm() {
         phone: form.phone,
         topic: topicEnum,
         description: form.description.trim(),
-        ...(form.company.trim() && { company: form.company.trim() }),
-        ...(form.industry && { industry: form.industry }),
-        ...(form.contactTime && { contactTime: form.contactTime }),
+        company: form.company.trim(),
+        industry: form.industry,
+        contactTime: form.contactTime,
         ...(form.wechat.trim() && { wechat: form.wechat.trim() }),
         ...(form.uploadIntent && { uploadIntent: form.uploadIntent }),
         ...(sourceLeadId && { sourceLeadId }),
@@ -216,27 +219,30 @@ function AppointmentForm() {
             </div>
 
             <div>
-              <Label className="mb-2 text-sm font-medium">企业名称 <span className="text-muted-foreground">选填</span></Label>
+              <Label className="mb-2 flex items-center gap-1 text-sm font-medium">企业名称 <span className="text-destructive">*</span></Label>
               <div className="relative">
                 <Building2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input className="h-12 rounded-xl pl-10" placeholder="请输入企业名称" value={form.company} onChange={(event) => updateField("company", event.target.value)} />
+                <Input className={cn("h-12 rounded-xl pl-10", errors.company && "border-destructive")} placeholder="请输入企业名称" value={form.company} onChange={(event) => updateField("company", event.target.value)} />
               </div>
+              <FieldError message={errors.company} />
             </div>
 
             <div>
-              <Label className="mb-2 text-sm font-medium">所属行业 <span className="text-muted-foreground">选填</span></Label>
+              <Label className="mb-2 flex items-center gap-1 text-sm font-medium">所属行业 <span className="text-destructive">*</span></Label>
               <Select value={form.industry} onValueChange={(value) => updateField("industry", value)}>
-                <SelectTrigger className="h-12 w-full rounded-xl"><SelectValue placeholder="请选择所属行业" /></SelectTrigger>
+                <SelectTrigger className={cn("h-12 w-full rounded-xl", errors.industry && "border-destructive")}><SelectValue placeholder="请选择所属行业" /></SelectTrigger>
                 <SelectContent>{industries.map((industry) => <SelectItem key={industry} value={industry}>{industry}</SelectItem>)}</SelectContent>
               </Select>
+              <FieldError message={errors.industry} />
             </div>
 
             <div>
-              <Label className="mb-2 text-sm font-medium">方便联系时间 <span className="text-muted-foreground">选填</span></Label>
+              <Label className="mb-2 flex items-center gap-1 text-sm font-medium">方便联系时间 <span className="text-destructive">*</span></Label>
               <Select value={form.contactTime} onValueChange={(value) => updateField("contactTime", value)}>
-                <SelectTrigger className="h-12 w-full rounded-xl"><SelectValue placeholder="请选择方便联系时间" /></SelectTrigger>
+                <SelectTrigger className={cn("h-12 w-full rounded-xl", errors.contactTime && "border-destructive")}><SelectValue placeholder="请选择方便联系时间" /></SelectTrigger>
                 <SelectContent>{contactTimes.map((time) => <SelectItem key={time} value={time}>{time}</SelectItem>)}</SelectContent>
               </Select>
+              <FieldError message={errors.contactTime} />
             </div>
 
             <div>

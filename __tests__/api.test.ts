@@ -71,8 +71,11 @@ function buildSupabaseChain(result: unknown) {
     neq: vi.fn().mockReturnThis(),
     ilike: vi.fn().mockReturnThis(),
     in: vi.fn().mockReturnThis(),
+    is: vi.fn().mockReturnThis(),
+    gt: vi.fn().mockReturnThis(),
     range: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue(result),
     insert: vi.fn().mockReturnThis(),
     update: vi.fn().mockReturnThis(),
@@ -101,7 +104,17 @@ describe('POST /api/auth/send-code', () => {
   });
 
   it('手机号合法时返回成功', async () => {
-    buildSupabaseChain({ data: null, error: null });
+    const chain = buildSupabaseChain({ data: null, error: null });
+    chain.select = vi.fn().mockImplementation((_fields?: string, opts?: { count?: string; head?: boolean }) => {
+      if (opts?.count === 'exact') {
+        return { ...chain, single: vi.fn().mockResolvedValue({ count: 0, data: null, error: null }) } as typeof chain;
+      }
+      return chain;
+    });
+    chain.limit = vi.fn().mockReturnValue({ ...chain, 0: undefined, length: 0 });
+    chain.single = vi.fn().mockResolvedValue({ data: null, error: null });
+    chain.insert = vi.fn().mockResolvedValue({ data: null, error: null });
+    mockFrom.mockReturnValue(chain);
 
     const { POST } = await import('@/app/api/auth/send-code/route');
     const req = makeRequest('POST', 'http://localhost/api/auth/send-code', { phone: '13800138001', purpose: 'login' });
@@ -214,6 +227,23 @@ describe('POST /api/material-claims', () => {
 describe('POST /api/ai/chat', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        query: '发票合规怎么判断？',
+        answer: '发票合规需要结合合同、物流、资金流和发票流综合判断，建议留存完整证据链。',
+        citations: [
+          {
+            title: '发票合规指南',
+            source_path: '税务知识库数据/发票合规.md',
+            section: '正文',
+            score: 0.9,
+            point_id: 'point-1',
+            doc_id: 'DOC-1',
+          },
+        ],
+      }),
+    }));
   });
 
   it('问题为空时返回 400', async () => {

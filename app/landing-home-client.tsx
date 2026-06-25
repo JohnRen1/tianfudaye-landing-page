@@ -62,7 +62,9 @@ export function LandingHomeClient({ fallback }: LandingHomeClientProps) {
 
   return (
     <EventLandingPage
+      showActivitySections
       eventData={{
+        id: activity.id,
         title: activity.name,
         speaker: activity.speaker,
         speakerTitle: activity.speakerTitle,
@@ -71,6 +73,7 @@ export function LandingHomeClient({ fallback }: LandingHomeClientProps) {
         location: activity.location,
         description: activity.description,
         coverImage: activity.coverImage ?? undefined,
+        materials: activity.materials ?? [],
       }}
     />
   );

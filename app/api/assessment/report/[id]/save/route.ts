@@ -23,7 +23,13 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
   }
 
   // 查询报告，验证存在性和归属
-  const existing = await getAssessmentReportById(id);
+  let existing: Awaited<ReturnType<typeof getAssessmentReportById>>;
+  try {
+    existing = await getAssessmentReportById(id);
+  } catch (error) {
+    return fail('REPORT_LOOKUP_FAILED', '报告查询失败', 500, error instanceof Error ? error.message : error);
+  }
+
   if (!existing) {
     return fail('REPORT_NOT_FOUND', '报告不存在', 404);
   }

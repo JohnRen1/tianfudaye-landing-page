@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Bot, CalendarCheck, CheckCircle2, ChevronRight, Clock, Headphones, MessageCircle, Phone, Send, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Bot, CalendarCheck, CheckCircle2, ChevronDown, Clock, Headphones, MessageCircle, Phone, Send, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,15 +10,36 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
 const faqs = [
-  "如何领取沙龙资料？",
-  "风险测评报告怎么看？",
-  "AI 回答可以作为税务意见吗？",
-  "如何预约人工顾问？",
+  {
+    question: "如何领取沙龙资料？",
+    answer: "进入活动页面后，在“沙龙资料”区域点击领取即可。若资料要求补充企业信息，请先按提示完善后再领取。",
+    action: "去资料页",
+    href: "/materials",
+  },
+  {
+    question: "风险测评报告怎么看？",
+    answer: "完成测评后会生成基础报告，包含综合得分、风险等级和模块分析。完整报告建议结合企业实际资料由顾问进一步解读。",
+    action: "重新测评",
+    href: "/risk-assessment",
+  },
+  {
+    question: "AI 回答可以作为税务意见吗？",
+    answer: "AI 回答仅基于现有知识库提供参考，不构成正式税务、法律或财务意见。涉及申报、稽查、重大交易等事项，建议预约人工顾问确认。",
+    action: "预约顾问",
+    href: "/appointment",
+  },
+  {
+    question: "如何预约人工顾问？",
+    answer: "点击“预约顾问”后填写手机号、企业信息和咨询主题即可提交。顾问会在工作时间内联系您确认具体问题。",
+    action: "立即预约",
+    href: "/appointment",
+  },
 ];
 
 export default function Page() {
   const router = useRouter();
   const [submitted, setSubmitted] = useState(false);
+  const [openFaq, setOpenFaq] = useState<string | null>(faqs[0]?.question ?? null);
 
   return (
     <div className="mx-auto min-h-screen max-w-[390px] bg-background pb-8">
@@ -42,19 +63,23 @@ export default function Page() {
       <div className="-mt-4 space-y-4 px-4">
         <Card className="border-0 shadow-lg shadow-primary/10">
           <CardContent className="p-4">
-            <div className="mb-3 flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-success" />
+            <div className="mb-3 flex items-center gap-2 leading-none">
+              <ShieldCheck className="h-5 w-5 shrink-0 text-success" />
               <h2 className="font-semibold text-foreground">服务时间</h2>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="rounded-2xl bg-secondary/70 p-3">
-                <Clock className="mb-2 h-4 w-4 text-primary" />
-                <p className="font-medium text-foreground">工作日</p>
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 shrink-0 text-primary" />
+                  <p className="font-medium text-foreground">工作日</p>
+                </div>
                 <p className="mt-1 text-xs text-muted-foreground">09:00 - 18:00</p>
               </div>
               <div className="rounded-2xl bg-secondary/70 p-3">
-                <Phone className="mb-2 h-4 w-4 text-primary" />
-                <p className="font-medium text-foreground">客服热线</p>
+                <div className="flex items-center gap-2">
+                  <Phone className="h-4 w-4 shrink-0 text-primary" />
+                  <p className="font-medium text-foreground">客服热线</p>
+                </div>
                 <p className="mt-1 text-xs text-muted-foreground">400-888-6688</p>
               </div>
             </div>
@@ -66,10 +91,30 @@ export default function Page() {
             <h2 className="mb-3 font-semibold text-foreground">常见问题</h2>
             <div className="space-y-2">
               {faqs.map((faq) => (
-                <button key={faq} className="flex w-full items-center justify-between rounded-2xl bg-secondary/60 p-3 text-left text-sm text-foreground" onClick={() => router.push("/tax-ai")}>
-                  <span>{faq}</span>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </button>
+                <div key={faq.question} className="rounded-2xl bg-secondary/60">
+                  <button
+                    className="flex w-full items-center justify-between gap-3 p-3 text-left text-sm text-foreground"
+                    onClick={() => setOpenFaq((current) => current === faq.question ? null : faq.question)}
+                    aria-expanded={openFaq === faq.question}
+                  >
+                    <span>{faq.question}</span>
+                    <ChevronDown
+                      className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${openFaq === faq.question ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {openFaq === faq.question && (
+                    <div className="border-t border-border/60 px-3 pb-3 text-sm leading-relaxed text-muted-foreground">
+                      <p className="pt-3">{faq.answer}</p>
+                      <Button
+                        variant="outline"
+                        className="mt-3 h-9 rounded-xl border-primary/20 px-3 text-primary"
+                        onClick={() => router.push(faq.href)}
+                      >
+                        {faq.action}
+                      </Button>
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           </CardContent>

@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server';
 import { getCurrentUserById } from './db';
 import type { CurrentUserDTO } from './contracts/auth';
+import { isUserAuthBypassEnabled, resolveBypassUser } from './auth-bypass';
+import { parseUserAuthToken, USER_AUTH_TOKEN_COOKIE } from './auth-token';
 
 export interface UserContext {
   userId: string;
@@ -14,23 +16,29 @@ export interface UserContext {
  */
 export async function requireUser(req: NextRequest): Promise<UserContext | null> {
   const authHeader = req.headers.get('authorization');
-  if (!authHeader?.startsWith('Bearer ')) return null;
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const cookieToken = req.cookies.get(USER_AUTH_TOKEN_COOKIE)?.value ?? null;
+  const token = bearerToken || cookieToken;
 
-  const token = authHeader.slice(7);
+  if (!token) {
+    if (!isUserAuthBypassEnabled()) return null;
+    const user = await resolveBypassUser();
+    return { userId: user.id, user };
+  }
 
-  // 开发阶段：解析临时 token（格式：base64(userId:timestamp)）
-  let userId: string;
-  try {
-    const decoded = Buffer.from(token, 'base64').toString('utf-8');
-    const [id] = decoded.split(':');
-    if (!id || id.length < 10) return null;
-    userId = id;
-  } catch {
-    return null;
+  const userId = parseUserAuthToken(token);
+  if (!userId) {
+    if (!isUserAuthBypassEnabled()) return null;
+    const user = await resolveBypassUser();
+    return { userId: user.id, user };
   }
 
   const user = await getCurrentUserById(userId);
-  if (!user) return null;
+  if (!user) {
+    if (!isUserAuthBypassEnabled()) return null;
+    const bypassUser = await resolveBypassUser();
+    return { userId: bypassUser.id, user: bypassUser };
+  }
 
   return { userId, user };
 }

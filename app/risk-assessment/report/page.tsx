@@ -25,6 +25,7 @@ import { getReport, unlockReport, saveReport } from "@/lib/api/assessment";
 import { RISK_LEVEL_LABEL } from "@/lib/contracts/shared";
 import type { AssessmentReportPublicDTO } from "@/lib/contracts/assessment";
 import type { RiskLevel } from "@/lib/contracts/shared";
+import { getClientAuthToken, hydrateClientAuthFromServer } from "@/lib/client-auth";
 
 // ---------------------------------------------------------------------------
 // Style helpers
@@ -83,6 +84,7 @@ function RiskReportContent() {
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   // -------------------------------------------------------------------------
   // Load report
@@ -106,22 +108,39 @@ function RiskReportContent() {
   }, [reportId]);
 
   useEffect(() => {
+    void hydrateClientAuthFromServer().then((loggedIn) => {
+      if (loggedIn) setIsLoggedIn(true);
+    });
+  }, []);
+
+  useEffect(() => {
     fetchReport();
   }, [fetchReport]);
 
   // -------------------------------------------------------------------------
   // Unlock
   // -------------------------------------------------------------------------
-  const handleUnlock = () => {
+  const handleUnlock = async () => {
     if (!report || report.isUnlocked) return;
-    // Check login by presence of token in localStorage
-    const token =
-      typeof window !== "undefined" ? localStorage.getItem("user-token") : null;
-    if (!token) {
+    const token = getClientAuthToken();
+    if (!token && !(await hydrateClientAuthFromServer())) {
       setShowLoginModal(true);
       return;
     }
+    setIsLoggedIn(true);
     doUnlock();
+  };
+
+  const handleFullReportClick = async () => {
+    if (!report) return;
+    if (report.isUnlocked) {
+      document.getElementById("full-report-suggestions")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      return;
+    }
+    await handleUnlock();
   };
 
   const doUnlock = async () => {
@@ -139,6 +158,7 @@ function RiskReportContent() {
 
   // Called after successful login in modal
   const handleLoginSuccess = () => {
+    setIsLoggedIn(true);
     setShowLoginModal(false);
     doUnlock();
   };
@@ -224,8 +244,8 @@ function RiskReportContent() {
           variant="ghost"
           size="icon"
           className="mb-5 rounded-full text-white hover:bg-white/10 hover:text-white"
-          onClick={() => router.push("/risk-assessment/quiz")}
-          aria-label="返回答题页"
+          onClick={() => router.push("/")}
+          aria-label="返回落地页主页"
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>
@@ -236,7 +256,7 @@ function RiskReportContent() {
           </Badge>
           <h1 className="text-2xl font-bold">企业财税风险初步报告</h1>
           <p className="mt-2 text-sm text-white/75">
-            基础报告免费展示，完整报告需登录查看
+            {isLoggedIn ? "已进入联调登录态，可直接查看完整报告能力。" : "基础报告免费展示，完整报告需登录查看"}
           </p>
         </div>
       </div>
@@ -364,7 +384,7 @@ function RiskReportContent() {
 
         {/* Suggestions (visible only when unlocked) */}
         {isUnlocked && suggestions && suggestions.length > 0 && (
-          <Card className="border-success/20 bg-success/5 shadow-sm">
+          <Card id="full-report-suggestions" className="scroll-mt-24 border-success/20 bg-success/5 shadow-sm">
             <CardContent className="p-4">
               <div className="mb-3 flex items-center gap-2">
                 <CheckCircle2 className="h-5 w-5 text-success" />
@@ -473,10 +493,14 @@ function RiskReportContent() {
             variant="outline"
             className="h-12 flex-1 rounded-xl"
             disabled={unlocking}
-            onClick={handleUnlock}
+            onClick={handleFullReportClick}
           >
-            <FileText className="mr-2 h-4 w-4" />
-            完整报告
+            {isUnlocked ? (
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+            ) : (
+              <FileText className="mr-2 h-4 w-4" />
+            )}
+            {isUnlocked ? "已解锁报告" : "完整报告"}
           </Button>
 
           <Button

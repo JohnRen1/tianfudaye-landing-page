@@ -54,6 +54,8 @@ import type { RiskLevel } from './shared';
  *   此接口结构需与 管理后台/lib/contracts/qa-record.ts > AiAnswerBodyDTO 保持一致。
  */
 export interface AiAnswerBodyDTO {
+  /** RAG 原始回答正文；真实 RAG 调用时优先使用此字段渲染完整回答 */
+  answerText?: string;
   /** AI 对用户问题的理解说明（对应落地页 section "问题理解"） */
   questionUnderstanding: string;
   /** AI 初步判断文本（对应落地页 section "初步判断"） */
@@ -90,12 +92,19 @@ export interface AiAnswerBodyDTO {
    *   riskLevel="medium" + needsConfirmation=true（由服务端处理，前端不需要手动映射）
    */
   needsConfirmation: boolean;
-  /**
-   * 引用的知识库条目 id 列表（RAG 预留）
-   * 当前阶段为空数组 []，接入真实 RAG 后由后端填充 knowledgeItems.id。
-   * 落地页可用此字段展示"参考来源"（如知识库文章标题）。
-   */
+  /** 引用的知识库条目 id 列表（RAG 预留） */
   knowledgeItemIds: string[];
+  /** RAG 检索引用来源，用于展示参考依据 */
+  citations?: AiCitationDTO[];
+}
+
+export interface AiCitationDTO {
+  title: string;
+  sourcePath: string;
+  section: string;
+  score: number;
+  pointId: string;
+  docId: string;
 }
 
 // ===========================================================================
@@ -128,6 +137,11 @@ export interface AiChatRequestDTO {
    * 服务端写入 qa_records.activity_id，不传则为 null。
    */
   activityId?: string | null;
+  /**
+   * 是否使用流式响应。
+   * true 时服务端返回 text/event-stream，前端逐段渲染；不传或 false 保持原 JSON 响应。
+   */
+  stream?: boolean;
 }
 
 /**

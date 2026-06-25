@@ -10,12 +10,9 @@ import type {
   WechatLoginResponseDTO,
   WechatPendingBindResponseDTO,
 } from '@/lib/contracts/auth';
+import { buildUserAuthToken, setUserAuthCookie } from '@/lib/auth-token';
 
 export const dynamic = 'force-dynamic';
-
-function buildDevToken(userId: string): string {
-  return Buffer.from(`${userId}:${Date.now()}`).toString('base64');
-}
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -53,16 +50,19 @@ export async function GET(req: NextRequest) {
       return ok(pending, 202);
     }
 
+    const accessToken = buildUserAuthToken(user.id);
     const response: WechatLoginResponseDTO = buildWechatLoginResponse({
       user,
       isNew: false,
-      accessToken: buildDevToken(user.id),
+      accessToken,
     });
 
-    return ok({
+    const nextResponse = ok({
       ...response,
       redirectPath: statePayload.redirectPath ?? '/',
     });
+    setUserAuthCookie(nextResponse, accessToken);
+    return nextResponse;
   } catch (error) {
     return fail(
       'WECHAT_LOGIN_FAILED',

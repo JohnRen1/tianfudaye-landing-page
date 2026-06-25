@@ -27,25 +27,34 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const response: SendCodeResponseDTO & { _devCode?: string } = await sendDevPhoneCode(phone);
+    const result = await sendDevPhoneCode(phone);
     const provider = getSmsProvider();
 
     if (provider === 'juhe') {
-      const code = response._devCode;
-      if (!code) {
+      if (!result._devCode) {
         return fail('SMS_CODE_PREPARE_FAILED', '验证码生成失败', 500);
       }
-      await sendJuheSmsCode({ phone, code });
-      return ok({
-        expiresInSeconds: response.expiresInSeconds,
-        isRegistered: response.isRegistered,
-      });
+      await sendJuheSmsCode({ phone, code: result._devCode });
+    }
+
+    const response: SendCodeResponseDTO = {
+      expiresInSeconds: result.expiresInSeconds,
+      isRegistered: result.isRegistered,
+    };
+
+    if (provider === 'dev') {
+      return ok({ ...response, _devCode: result._devCode });
     }
 
     return ok(response);
   } catch (error) {
-    if (error instanceof Error && error.message === 'CODE_SEND_TOO_FREQUENT') {
-      return fail('CODE_SEND_TOO_FREQUENT', '发送太频繁，请 60 秒后再试', 429);
+    if (error instanceof Error) {
+      if (error.message === 'CODE_SEND_TOO_FREQUENT') {
+        return fail('CODE_SEND_TOO_FREQUENT', '发送太频繁，请 60 秒后再试', 429);
+      }
+      if (error.message === 'CODE_DAILY_LIMIT_EXCEEDED') {
+        return fail('CODE_DAILY_LIMIT_EXCEEDED', '今日验证码发送次数已达上限', 429);
+      }
     }
     return fail('SEND_CODE_FAILED', '验证码发送失败', 500, error instanceof Error ? error.message : error);
   }

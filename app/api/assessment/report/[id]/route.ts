@@ -9,6 +9,11 @@ interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
+function logAssessmentReport(message: string, data?: unknown): void {
+  if (process.env.NODE_ENV === 'production') return;
+  console.log(`[assessment/report] ${message}`, data ?? '');
+}
+
 /**
  * GET /api/assessment/report/:id
  * 认证可选。
@@ -18,9 +23,25 @@ interface RouteContext {
 export async function GET(req: NextRequest, { params }: RouteContext) {
   const { id } = await params;
   const userCtx = await requireUser(req);
+  logAssessmentReport('request start', {
+    reportId: id,
+    hasUser: Boolean(userCtx),
+    userId: userCtx?.userId ?? null,
+  });
 
-  const result = await getAssessmentReportById(id);
+  let result: Awaited<ReturnType<typeof getAssessmentReportById>>;
+  try {
+    result = await getAssessmentReportById(id);
+  } catch (error) {
+    logAssessmentReport('lookup failed', {
+      reportId: id,
+      message: error instanceof Error ? error.message : error,
+    });
+    return fail('REPORT_LOOKUP_FAILED', '报告查询失败', 500, error instanceof Error ? error.message : error);
+  }
+
   if (!result) {
+    logAssessmentReport('not found', { reportId: id });
     return fail('REPORT_NOT_FOUND', '报告不存在', 404);
   }
 
@@ -28,9 +49,20 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
   const reportUserId = result.userId;
   if (reportUserId !== null && userCtx !== null) {
     if (reportUserId !== userCtx.userId) {
+      logAssessmentReport('forbidden', {
+        reportId: id,
+        reportUserId,
+        requestUserId: userCtx.userId,
+      });
       return fail('REPORT_FORBIDDEN', '无权限访问此报告', 403);
     }
   }
 
+  logAssessmentReport('success', {
+    reportId: id,
+    reportUserId,
+    score: result.report.score,
+    riskLevel: result.report.riskLevel,
+  });
   return ok(result.report);
 }

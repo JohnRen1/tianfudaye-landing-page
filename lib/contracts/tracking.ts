@@ -202,6 +202,15 @@ export interface TrackingActivityDTO {
   coverImage: string | null;
   /** 活动状态，落地页据此决定是否展示"报名已结束"提示 */
   status: 'published' | 'draft' | 'closed';
+  /** 当前活动绑定的已上架资料列表 */
+  materials?: Array<{
+    id: string;
+    title: string;
+    format: string;
+    fileSize: string | null;
+    needLogin: boolean;
+    needCompanyInfo: boolean;
+  }>;
 }
 
 // ===========================================================================

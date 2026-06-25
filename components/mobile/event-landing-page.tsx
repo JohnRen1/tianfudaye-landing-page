@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   FileText,
@@ -11,11 +11,9 @@ import {
   MapPin,
   Clock,
   User,
-  Shield,
   ChevronRight,
   CheckCircle,
   Building2,
-  Phone,
   Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,9 +21,21 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { LoginModal } from "./login-modal";
+import { hydrateClientAuthFromServer } from "@/lib/client-auth";
+import { claimMaterial } from "@/lib/api/materials";
+
+interface EventMaterial {
+  id: string;
+  title: string;
+  format: string;
+  fileSize: string | null;
+  needLogin: boolean;
+  needCompanyInfo: boolean;
+}
 
 interface EventLandingPageProps {
   eventData?: {
+    id?: string;
     title: string;
     speaker: string;
     speakerTitle: string;
@@ -34,9 +44,11 @@ interface EventLandingPageProps {
     location: string;
     description: string;
     coverImage?: string;
+    materials?: EventMaterial[];
   };
   isLoggedIn?: boolean;
   onLogin?: () => void;
+  showActivitySections?: boolean;
 }
 
 const defaultEventData = {
@@ -50,216 +62,266 @@ const defaultEventData = {
     "本次沙龙聚焦企业所得税合规管理与风险防控，深入解析最新税收政策变化，帮助企业识别潜在税务风险，建立健全的税务管理体系。",
 };
 
-const materials = [
-  {
-    id: 1,
-    title: "沙龙课件 PDF",
-    type: "PDF",
-    size: "2.4 MB",
-    icon: FileText,
-    downloaded: false,
-  },
-  {
-    id: 2,
-    title: "发票合规检查表",
-    type: "Excel",
-    size: "156 KB",
-    icon: ClipboardCheck,
-    downloaded: false,
-  },
-  {
-    id: 3,
-    title: "税务风险自查表",
-    type: "PDF",
-    size: "892 KB",
-    icon: Shield,
-    downloaded: false,
-  },
-  {
-    id: 4,
-    title: "政策解读汇编",
-    type: "PDF",
-    size: "3.1 MB",
-    icon: FileText,
-    downloaded: true,
-  },
-];
-
 export function EventLandingPage({
   eventData = defaultEventData,
   isLoggedIn: initialLoggedIn = false,
   onLogin,
+  showActivitySections = false,
 }: EventLandingPageProps) {
   const router = useRouter();
-  const [isLoggedIn, setIsLoggedIn] = useState(initialLoggedIn);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [downloadedMaterials, setDownloadedMaterials] = useState<number[]>([4]);
+  const [downloadedMaterials, setDownloadedMaterials] = useState<string[]>([]);
+  const [claimingMaterialId, setClaimingMaterialId] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+  const isLoggedInRef = useRef(false);
+  const materials = eventData.materials ?? [];
+  const isGeneralLanding = !showActivitySections;
 
-  const handleMaterialClick = (materialId: number) => {
-    if (!isLoggedIn) {
+  useEffect(() => {
+    if (initialLoggedIn) {
+      isLoggedInRef.current = true;
+      setIsLoggedIn(true);
+      return;
+    }
+    void hydrateClientAuthFromServer().then((loggedIn) => {
+      isLoggedInRef.current = loggedIn;
+      if (loggedIn) setIsLoggedIn(true);
+    });
+  }, [initialLoggedIn]);
+
+  const requireLogin = (action: () => void) => {
+    if (isLoggedInRef.current) {
+      action();
+      return;
+    }
+    setPendingAction(() => action);
+    setShowLoginModal(true);
+  };
+
+  const handleMaterialClick = async (materialId: string) => {
+    if (!isLoggedInRef.current) {
+      setPendingAction(() => () => void handleMaterialClick(materialId));
       setShowLoginModal(true);
       return;
     }
-    if (!downloadedMaterials.includes(materialId)) {
-      setDownloadedMaterials([...downloadedMaterials, materialId]);
+
+    setClaimingMaterialId(materialId);
+    try {
+      const result = await claimMaterial(materialId, eventData.id ?? null);
+      setDownloadedMaterials((current) => current.includes(materialId) ? current : [...current, materialId]);
+      window.open(result.downloadUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "领取资料失败");
+    } finally {
+      setClaimingMaterialId(null);
     }
   };
 
   const handleLoginSuccess = () => {
+    isLoggedInRef.current = true;
     setIsLoggedIn(true);
     setShowLoginModal(false);
     onLogin?.();
+    if (pendingAction) {
+      pendingAction();
+      setPendingAction(null);
+    }
   };
 
   return (
     <div className="min-h-screen bg-background pb-24">
-      {/* 顶部活动封面区域 - 深蓝渐变 */}
-      <div
-        className={cn(
-          "relative bg-gradient-to-br from-primary via-primary/90 to-primary/80 text-primary-foreground",
-          eventData.coverImage && "bg-cover bg-center",
-        )}
-        style={eventData.coverImage ? { backgroundImage: `url("${eventData.coverImage}")` } : undefined}
-      >
-        {eventData.coverImage ? <div className="absolute inset-0 bg-primary/15" /> : null}
-        {/* 装饰图案 */}
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute -top-20 -right-20 h-40 w-40 rounded-full bg-white/5" />
-          <div className="absolute top-20 -left-10 h-24 w-24 rounded-full bg-white/5" />
-          <div className="absolute bottom-10 right-10 h-16 w-16 rounded-full bg-accent/20" />
-        </div>
-
-        <div className="relative px-4 pb-8 pt-12">
-          {/* 活动标签 */}
-          <div className="mb-4 flex items-center gap-2">
-            <Badge className="bg-accent text-accent-foreground hover:bg-accent/90">
-              线下沙龙
-            </Badge>
-            <Badge variant="outline" className="border-white/30 text-white">
-              免费参加
-            </Badge>
-          </div>
-
-          {/* 活动标题 */}
-          <h1 className="mb-4 text-xl font-bold leading-tight text-balance">
-            {eventData.title}
-          </h1>
-
-          {/* 活动信息 */}
-          <div className="space-y-2 text-sm text-white/80">
-            <div className="flex items-center gap-2">
-              <User className="h-4 w-4" />
-              <span>
-                {eventData.speaker} · {eventData.speakerTitle}
-              </span>
+      {isGeneralLanding && (
+        <div className="relative overflow-hidden bg-gradient-to-br from-primary via-primary/90 to-primary/80 text-primary-foreground">
+          <div className="absolute -right-16 top-8 h-40 w-40 rounded-full bg-amber-400/20 blur-2xl" />
+          <div className="absolute -left-20 bottom-0 h-48 w-48 rounded-full bg-blue-400/15 blur-3xl" />
+          <div className="relative px-4 pb-8 pt-12">
+            <div className="mb-5 inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs text-blue-50 backdrop-blur">
+              AA级税务师事务所
             </div>
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              <span>{eventData.date}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4" />
-              <span>{eventData.time}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <MapPin className="h-4 w-4" />
-              <span>{eventData.location}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 活动简介 */}
-      <div className="px-4 py-4">
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-4">
-            <h2 className="mb-2 flex items-center gap-2 text-base font-semibold text-foreground">
-              <Building2 className="h-4 w-4 text-primary" />
-              活动简介
-            </h2>
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              {eventData.description}
+            <h1 className="text-2xl font-bold leading-tight text-balance">
+              天赋大业律师事务所
+            </h1>
+            <p className="mt-3 text-sm leading-relaxed text-blue-50/85">
+              以专业税务服务、财税咨询与企业培训为基础，帮助企业识别风险、规范管理、提升经营决策质量。
             </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* 资料领取模块 */}
-      <div className="px-4 py-2">
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-4">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
-                <FileText className="h-4 w-4 text-primary" />
-                沙龙资料
-              </h2>
-              <span className="text-xs text-muted-foreground">
-                共{materials.length}份资料
-              </span>
+            <div className="mt-6 grid grid-cols-3 gap-2">
+              <div className="rounded-2xl bg-white/10 p-3 text-center backdrop-blur">
+                <strong className="block text-lg text-amber-300">2006</strong>
+                <span className="text-[11px] text-blue-50/75">成立年份</span>
+              </div>
+              <div className="rounded-2xl bg-white/10 p-3 text-center backdrop-blur">
+                <strong className="block text-lg text-amber-300">5000+</strong>
+                <span className="text-[11px] text-blue-50/75">服务企业</span>
+              </div>
+              <div className="rounded-2xl bg-white/10 p-3 text-center backdrop-blur">
+                <strong className="block text-lg text-amber-300">AA</strong>
+                <span className="text-[11px] text-blue-50/75">行业评级</span>
+              </div>
             </div>
+          </div>
+        </div>
+      )}
 
-            <div className="space-y-3">
-              {materials.map((material) => {
-                const isDownloaded = downloadedMaterials.includes(material.id);
-                const Icon = material.icon;
-
-                return (
-                  <div
-                    key={material.id}
-                    className="flex items-center justify-between rounded-lg bg-secondary/50 p-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                        <Icon className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-foreground">
-                          {material.title}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {material.type} · {material.size}
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant={isDownloaded ? "outline" : "default"}
-                      className={cn(
-                        "h-8 min-w-[72px]",
-                        !isDownloaded &&
-                          "bg-accent text-accent-foreground hover:bg-accent/90"
-                      )}
-                      onClick={() => handleMaterialClick(material.id)}
-                    >
-                      {isDownloaded ? (
-                        <>
-                          <CheckCircle className="mr-1 h-3 w-3" />
-                          已领取
-                        </>
-                      ) : (
-                        <>
-                          <Download className="mr-1 h-3 w-3" />
-                          领取
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
-
-            {!isLoggedIn && (
-              <Button
-                className="mt-4 w-full bg-accent text-accent-foreground hover:bg-accent/90"
-                onClick={() => setShowLoginModal(true)}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                立即领取全部资料
-              </Button>
+      {showActivitySections && (
+        <>
+          {/* 顶部活动封面区域 - 深蓝渐变 */}
+          <div
+            className={cn(
+              "relative bg-gradient-to-br from-primary via-primary/90 to-primary/80 text-primary-foreground",
+              eventData.coverImage && "bg-cover bg-center",
             )}
-          </CardContent>
-        </Card>
-      </div>
+            style={eventData.coverImage ? { backgroundImage: `url("${eventData.coverImage}")` } : undefined}
+          >
+            {eventData.coverImage ? <div className="absolute inset-0 bg-primary/15" /> : null}
+            {/* 装饰图案 */}
+            <div className="absolute inset-0 overflow-hidden">
+              <div className="absolute -top-20 -right-20 h-40 w-40 rounded-full bg-white/5" />
+              <div className="absolute top-20 -left-10 h-24 w-24 rounded-full bg-white/5" />
+              <div className="absolute bottom-10 right-10 h-16 w-16 rounded-full bg-accent/20" />
+            </div>
+
+            <div className="relative px-4 pb-8 pt-12">
+              {/* 活动标签 */}
+              <div className="mb-4 flex items-center gap-2">
+                <Badge className="bg-accent text-accent-foreground hover:bg-accent/90">
+                  线下沙龙
+                </Badge>
+                <Badge variant="outline" className="border-white/30 text-white">
+                  免费参加
+                </Badge>
+              </div>
+
+              {/* 活动标题 */}
+              <h1 className="mb-4 text-xl font-bold leading-tight text-balance">
+                {eventData.title}
+              </h1>
+
+              {/* 活动信息 */}
+              <div className="space-y-2 text-sm text-white/80">
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  <span>
+                    {eventData.speaker} · {eventData.speakerTitle}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4" />
+                  <span>{eventData.date}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  <span>{eventData.time}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4" />
+                  <span>{eventData.location}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 活动简介 */}
+          <div className="px-4 py-4">
+            <Card className="border-0 shadow-sm">
+              <CardContent className="p-4">
+                <h2 className="mb-2 flex items-center gap-2 text-base font-semibold text-foreground">
+                  <Building2 className="h-4 w-4 text-primary" />
+                  活动简介
+                </h2>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {eventData.description}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* 资料领取模块 */}
+          <div className="px-4 py-2">
+            <Card className="border-0 shadow-sm">
+              <CardContent className="p-4">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+                    <FileText className="h-4 w-4 text-primary" />
+                    沙龙资料
+                  </h2>
+                  <span className="text-xs text-muted-foreground">
+                    共{materials.length}份资料
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {materials.length === 0 ? (
+                    <div className="rounded-lg bg-secondary/50 p-4 text-center text-sm text-muted-foreground">
+                      当前活动暂无绑定资料
+                    </div>
+                  ) : materials.map((material) => {
+                    const isDownloaded = downloadedMaterials.includes(material.id);
+                    const Icon = material.format === "Excel" ? ClipboardCheck : FileText;
+                    const isClaiming = claimingMaterialId === material.id;
+
+                    return (
+                      <div
+                        key={material.id}
+                        className="flex items-center justify-between rounded-lg bg-secondary/50 p-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                            <Icon className="h-5 w-5 text-primary" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-foreground">
+                              {material.title}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {material.format} · {material.fileSize ?? "大小未知"}
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant={isDownloaded ? "outline" : "default"}
+                          className={cn(
+                            "h-8 min-w-[72px]",
+                            !isDownloaded &&
+                              "bg-accent text-accent-foreground hover:bg-accent/90"
+                          )}
+                          onClick={() => void handleMaterialClick(material.id)}
+                          disabled={isClaiming}
+                        >
+                          {isDownloaded ? (
+                            <>
+                              <CheckCircle className="mr-1 h-3 w-3" />
+                              已领取
+                            </>
+                          ) : (
+                            <>
+                              <Download className="mr-1 h-3 w-3" />
+                              领取
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {!isLoggedIn && materials.length > 0 && (
+                  <Button
+                    className="mt-4 w-full bg-accent text-accent-foreground hover:bg-accent/90"
+                    onClick={() => {
+                      setShowLoginModal(true);
+                    }}
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    立即领取全部资料
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
 
       {/* 核心功能入口 */}
       <div className="px-4 py-4">
@@ -270,7 +332,7 @@ export function EventLandingPage({
           {/* AI 税务助手 */}
           <Card
             className="cursor-pointer border-0 shadow-sm transition-all hover:shadow-md"
-            onClick={() => router.push("/tax-ai")}
+            onClick={() => requireLogin(() => router.push("/tax-ai"))}
           >
             <CardContent className="flex items-center gap-4 p-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80">
@@ -289,7 +351,7 @@ export function EventLandingPage({
           {/* 财税风险测评 */}
           <Card
             className="cursor-pointer border-0 shadow-sm transition-all hover:shadow-md"
-            onClick={() => router.push("/risk-assessment")}
+            onClick={() => requireLogin(() => router.push("/risk-assessment"))}
           >
             <CardContent className="flex items-center gap-4 p-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-warning to-warning/80">
@@ -305,18 +367,18 @@ export function EventLandingPage({
             </CardContent>
           </Card>
 
-          {/* 预约顾问 */}
+          {/* 资料领取 */}
           <Card
             className="cursor-pointer border-0 shadow-sm transition-all hover:shadow-md"
-            onClick={() => router.push("/appointment")}
+            onClick={() => requireLogin(() => router.push("/materials"))}
           >
             <CardContent className="flex items-center gap-4 p-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                <Phone className="h-6 w-6 text-primary" />
+                <FileText className="h-6 w-6 text-primary" />
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-foreground">预约顾问</h3>
+                  <h3 className="font-semibold text-foreground">资料领取</h3>
                   <Badge
                     variant="secondary"
                     className="bg-secondary text-secondary-foreground hover:bg-secondary"
@@ -325,7 +387,7 @@ export function EventLandingPage({
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  高风险问题，建议顾问解读
+                  领取通用财税资料
                 </p>
               </div>
               <ChevronRight className="h-5 w-5 text-muted-foreground" />
@@ -342,7 +404,10 @@ export function EventLandingPage({
               关于我们
             </h2>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              智税财税咨询是一家专注于企业税务风险管理的专业机构，拥有20余位注册税务师、注册会计师，累计服务超过5000家企业客户，帮助企业建立合规税务体系、防控税务风险。
+              山东天赋大业税务师事务所成立于2006年，是经批准设立的专业税务服务机构，获评“AA级税务师事务所”“山东省规范化税务师事务所”等称号。
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              我们隶属于山东天赋大业财税集团，长期专注税务指导、教育培训与财税咨询，累计服务5000家企业，致力于帮助企业规范财务管理、降低财税风险、实现稳健发展。
             </p>
           </CardContent>
         </Card>
@@ -365,14 +430,14 @@ export function EventLandingPage({
           <Button
             variant="outline"
             className="flex-1"
-            onClick={() => router.push("/support")}
+            onClick={() => requireLogin(() => router.push("/support"))}
           >
             <MessageSquare className="mr-2 h-4 w-4" />
             咨询客服
           </Button>
           <Button
             className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
-            onClick={() => router.push("/appointment")}
+            onClick={() => requireLogin(() => router.push("/appointment"))}
           >
             <Calendar className="mr-2 h-4 w-4" />
             立即预约
