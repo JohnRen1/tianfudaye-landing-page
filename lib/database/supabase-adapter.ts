@@ -887,10 +887,11 @@ export async function listLandingMaterials(params: {
   let query = serviceClient
     .from('materials')
     .select(
-      'id, name, type, sub_type, format, description, downloads, need_login, need_company_info, file_size_bytes',
+      'id, name, type, sub_type, format, storage_key, description, downloads, need_login, need_company_info, file_size_bytes',
       { count: 'exact' },
     )
     .eq('status', 'published')
+    .not('storage_key', 'like', 'seed/%')
     .order('created_at', { ascending: false })
     .range(from, to);
 
