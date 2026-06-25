@@ -2,6 +2,13 @@ interface SmsSendResult {
   provider: 'dev' | 'juhe';
 }
 
+export interface SmsRuntimeInfo {
+  provider: 'dev' | 'juhe';
+  rawProvider: string | null;
+  hasJuheApiKey: boolean;
+  hasJuheTplId: boolean;
+}
+
 function getRequiredEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -11,7 +18,16 @@ function getRequiredEnv(name: string): string {
 }
 
 export function getSmsProvider(): 'dev' | 'juhe' {
-  return process.env.SMS_PROVIDER === 'juhe' ? 'juhe' : 'dev';
+  return process.env.SMS_PROVIDER?.trim().toLowerCase() === 'juhe' ? 'juhe' : 'dev';
+}
+
+export function getSmsRuntimeInfo(): SmsRuntimeInfo {
+  return {
+    provider: getSmsProvider(),
+    rawProvider: process.env.SMS_PROVIDER ?? null,
+    hasJuheApiKey: Boolean(process.env.JUHE_SMS_API_KEY?.trim()),
+    hasJuheTplId: Boolean(process.env.JUHE_SMS_TPL_ID?.trim()),
+  };
 }
 
 export async function sendJuheSmsCode(params: {
