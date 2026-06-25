@@ -5,6 +5,7 @@ import { requireUser } from '@/lib/auth';
 import { AI_CHAT_ERROR_CODES } from '@/lib/contracts/ai-chat';
 import type { AiAnswerBodyDTO, AiCitationDTO } from '@/lib/contracts/ai-chat';
 import type { RiskLevel } from '@/lib/contracts/shared';
+import { isProdEnv, pickEnvByStage } from '@/lib/env';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +30,17 @@ interface RagStreamResult {
 }
 
 function getRagChatUrl(): string {
-  return process.env.RAG_CHAT_URL?.trim() || 'http://127.0.0.1:8000/chat';
+  const configuredUrl = pickEnvByStage(
+    process.env.RAG_CHAT_URL,
+    process.env.NEXT_RAG_CHAT_URL,
+  );
+  if (configuredUrl) return configuredUrl;
+
+  if (!isProdEnv()) {
+    return 'http://127.0.0.1:8000/chat';
+  }
+
+  throw new Error(isProdEnv() ? 'NEXT_RAG_CHAT_URL is not configured' : 'RAG_CHAT_URL is not configured');
 }
 
 function isAiStreamDebugEnabled(): boolean {
