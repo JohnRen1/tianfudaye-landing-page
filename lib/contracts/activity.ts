@@ -32,6 +32,8 @@
  * 注意：本项目无 packages/ 共享包，落地页与管理后台的 DTO 单独维护。
  */
 
+import type { MaterialClaimStatus } from './material';
+
 // ===========================================================================
 // 活动展示 DTO（EventLandingPage 组件 eventData props 契约）
 // ===========================================================================
@@ -167,6 +169,8 @@ export interface ActivityMaterialDisplayDTO {
    * 审计高风险项 S4：落地页 mock 用 needsCompanyInfo（多一个 s）。
    */
   needCompanyInfo: boolean;
+  /** 当前用户对该资料的领取状态，刷新后由服务端返回，避免仅依赖前端本地状态。 */
+  claimStatus: MaterialClaimStatus;
 }
 
 /**

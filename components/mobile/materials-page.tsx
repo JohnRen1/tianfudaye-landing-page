@@ -96,6 +96,11 @@ export function MaterialsPage() {
     });
   }, []);
 
+  const goToProfileComplete = () => {
+    const redirect = `${window.location.pathname}${window.location.search}`;
+    router.push(`/profile/complete?redirect=${encodeURIComponent(redirect)}`);
+  };
+
   const handleClaim = async (material: MaterialLandingItemDTO) => {
     if (material.claimStatus === "claimed") return;
     if (material.claimStatus === "needs_login" || !isClientLoggedIn()) {
@@ -104,7 +109,7 @@ export function MaterialsPage() {
       return;
     }
     if (material.claimStatus === "needs_company_info") {
-      window.alert("该资料需要先补充企业信息后才能领取。");
+      goToProfileComplete();
       return;
     }
 
@@ -120,7 +125,12 @@ export function MaterialsPage() {
       );
       window.open(result.downloadUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "领取资料失败");
+      const message = error instanceof Error ? error.message : "领取资料失败";
+      if (message.includes("企业信息") || message.includes("CLAIM_COMPANY_INFO_REQUIRED")) {
+        goToProfileComplete();
+        return;
+      }
+      window.alert(message);
     } finally {
       setClaimingId(null);
     }

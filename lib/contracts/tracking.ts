@@ -21,6 +21,8 @@
  *   两侧字段保持同步，变更时需同时更新。
  */
 
+import type { MaterialClaimStatus } from './material';
+
 // ===========================================================================
 // URL 参数协议（S2 核心定义）
 // ===========================================================================
@@ -210,6 +212,7 @@ export interface TrackingActivityDTO {
     fileSize: string | null;
     needLogin: boolean;
     needCompanyInfo: boolean;
+    claimStatus: MaterialClaimStatus;
   }>;
 }
 

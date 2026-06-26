@@ -47,6 +47,10 @@ function isAiStreamDebugEnabled(): boolean {
   return process.env.AI_STREAM_DEBUG === 'true';
 }
 
+function getRagMaxTokens(): number {
+  return Math.max(800, Number(process.env.RAG_CHAT_MAX_TOKENS ?? 2400));
+}
+
 function normalizeCitation(raw: RagCitationRaw): AiCitationDTO {
   return {
     title: typeof raw.title === 'string' ? raw.title : '未命名来源',
@@ -118,6 +122,8 @@ async function callRagChat(question: string): Promise<RagChatResponseRaw> {
       body: JSON.stringify({
         query: question,
         top_k: Number(process.env.RAG_CHAT_TOP_K ?? 6),
+        max_tokens: getRagMaxTokens(),
+        max_new_tokens: getRagMaxTokens(),
         return_debug: process.env.RAG_CHAT_RETURN_DEBUG !== 'false',
       }),
       signal: controller.signal,
@@ -199,6 +205,8 @@ async function callRagChatStream(question: string, onDelta: (text: string) => vo
       body: JSON.stringify({
         query: question,
         top_k: Number(process.env.RAG_CHAT_TOP_K ?? 6),
+        max_tokens: getRagMaxTokens(),
+        max_new_tokens: getRagMaxTokens(),
         return_debug: process.env.RAG_CHAT_RETURN_DEBUG !== 'false',
         stream: true,
       }),

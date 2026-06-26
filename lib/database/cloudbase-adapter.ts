@@ -141,6 +141,9 @@ export const loginOrCreateUserByPhone: typeof SupabaseAdapter.loginOrCreateUserB
 export const buildPhoneLoginResponse: typeof SupabaseAdapter.buildPhoneLoginResponse = () =>
   notImplemented('buildPhoneLoginResponse');
 
+export const updateUserProfile: typeof SupabaseAdapter.updateUserProfile = async () =>
+  notImplemented('updateUserProfile');
+
 export const getUserByWechatOpenId: typeof SupabaseAdapter.getUserByWechatOpenId = async () =>
   notImplemented('getUserByWechatOpenId');
 

@@ -32,5 +32,6 @@ export const verifyAndConsumeDevCode = adapter.verifyAndConsumeDevCode;
 export const sendDevPhoneCode = adapter.sendDevPhoneCode;
 export const loginOrCreateUserByPhone = adapter.loginOrCreateUserByPhone;
 export const buildPhoneLoginResponse = adapter.buildPhoneLoginResponse;
+export const updateUserProfile = adapter.updateUserProfile;
 export const getUserByWechatOpenId = adapter.getUserByWechatOpenId;
 export const buildWechatLoginResponse = adapter.buildWechatLoginResponse;

@@ -172,7 +172,7 @@ function MarkdownAnswer({ content }: { content: string }) {
   flushList();
   flushOrderedList();
 
-  return <div className="space-y-3">{blocks}</div>;
+  return <div className="max-w-full space-y-3 overflow-hidden break-words">{blocks}</div>;
 }
 
 function AiAnswerCard({
@@ -191,7 +191,7 @@ function AiAnswerCard({
   }, [answer.citations]);
 
   return (
-    <div className="space-y-3">
+    <div className="max-w-full space-y-3 overflow-hidden">
       <Card className="border-0 bg-card shadow-sm">
         <CardContent className="p-4">
           <div className="mb-3 flex items-center gap-2">
@@ -315,6 +315,7 @@ export function TaxAiAssistantPage() {
   const [messages, setMessages] = useState<ChatMessageDTO[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isChatStateRestored, setIsChatStateRestored] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -326,11 +327,17 @@ export function TaxAiAssistantPage() {
 
   useEffect(() => {
     const rawState = sessionStorage.getItem(CHAT_STATE_STORAGE_KEY);
-    if (!rawState) return;
+    if (!rawState) {
+      setIsChatStateRestored(true);
+      return;
+    }
 
     try {
       const parsed: unknown = JSON.parse(rawState);
-      if (!isStoredChatState(parsed)) return;
+      if (!isStoredChatState(parsed)) {
+        setIsChatStateRestored(true);
+        return;
+      }
       const completedMessages = parsed.messages.filter(
         (message) => message.role === "user" || message.answer !== null,
       );
@@ -339,10 +346,14 @@ export function TaxAiAssistantPage() {
       setInputValue(parsed.inputValue);
     } catch {
       sessionStorage.removeItem(CHAT_STATE_STORAGE_KEY);
+    } finally {
+      setIsChatStateRestored(true);
     }
   }, []);
 
   useEffect(() => {
+    if (!isChatStateRestored) return;
+
     const completedMessages = messages.filter(
       (message) => message.role === "user" || message.answer !== null,
     );
@@ -353,7 +364,7 @@ export function TaxAiAssistantPage() {
       savedAt: Date.now(),
     };
     sessionStorage.setItem(CHAT_STATE_STORAGE_KEY, JSON.stringify(storedState));
-  }, [inputValue, messages, sessionId]);
+  }, [inputValue, isChatStateRestored, messages, sessionId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -365,13 +376,28 @@ export function TaxAiAssistantPage() {
     return false;
   };
 
+  const persistCurrentChatState = () => {
+    const completedMessages = messages.filter(
+      (message) => message.role === "user" || message.answer !== null,
+    );
+    const storedState: StoredChatState = {
+      messages: completedMessages,
+      sessionId,
+      inputValue,
+      savedAt: Date.now(),
+    };
+    sessionStorage.setItem(CHAT_STATE_STORAGE_KEY, JSON.stringify(storedState));
+  };
+
   const openAppointment = () => {
     if (!requireLogin()) return;
+    persistCurrentChatState();
     router.push("/appointment");
   };
 
   const openMaterials = () => {
     if (!requireLogin()) return;
+    persistCurrentChatState();
     router.push("/materials");
   };
 
@@ -448,7 +474,7 @@ export function TaxAiAssistantPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden bg-background">
       <header className="relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-6 pt-4 text-primary-foreground">
         <div className="absolute -right-20 top-5 h-44 w-44 rounded-full border border-white/15" />
         <div className="absolute -right-8 top-16 h-24 w-24 rounded-full border border-white/20" />
@@ -482,7 +508,7 @@ export function TaxAiAssistantPage() {
         </div>
       </header>
 
-      <main className="flex-1 space-y-4 px-4 pb-28 pt-4">
+      <main className="min-w-0 flex-1 space-y-4 px-4 pb-36 pt-4">
         <div className="rounded-2xl border border-destructive/20 bg-destructive/10 p-3 text-sm leading-relaxed text-destructive">
           <div className="flex gap-2">
             <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
@@ -521,8 +547,8 @@ export function TaxAiAssistantPage() {
         <section className="space-y-4">
           {messages.map((message) =>
             message.role === "user" ? (
-              <div key={message.id} className="flex justify-end gap-2">
-                <div className="max-w-[78%] rounded-2xl rounded-tr-sm bg-primary px-4 py-3 text-sm leading-relaxed text-primary-foreground shadow-sm">
+              <div key={message.id} className="flex min-w-0 justify-end gap-2">
+                <div className="min-w-0 max-w-[78%] break-words rounded-2xl rounded-tr-sm bg-primary px-4 py-3 text-sm leading-relaxed text-primary-foreground shadow-sm">
                   {message.content}
                 </div>
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
@@ -530,7 +556,7 @@ export function TaxAiAssistantPage() {
                 </div>
               </div>
             ) : (
-              <div key={message.id} className="flex gap-2">
+              <div key={message.id} className="flex min-w-0 gap-2 overflow-hidden">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
                   <Bot className="h-4 w-4 text-primary" />
                 </div>
@@ -560,7 +586,7 @@ export function TaxAiAssistantPage() {
         </section>
       </main>
 
-      <div className="fixed bottom-0 left-0 right-0 border-t border-border bg-card/95 p-4 shadow-lg backdrop-blur">
+      <div className="fixed bottom-0 left-1/2 right-auto w-full max-w-[390px] -translate-x-1/2 border-t border-border bg-card/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-lg backdrop-blur">
         <div className="mx-auto flex max-w-[390px] gap-2">
           <Input
             placeholder="请输入您的税务问题"

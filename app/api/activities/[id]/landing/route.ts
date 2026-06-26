@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getActivityLandingDetail } from '@/lib/db';
+import { requireUser } from '@/lib/auth';
 import { ok, fail } from '@/lib/api-response';
 import { TRACKING_ERROR_CODES } from '@/lib/contracts/tracking';
 
@@ -15,7 +16,12 @@ export async function GET(
     return fail(TRACKING_ERROR_CODES.TRACK_ACTIVITY_NOT_FOUND, '活动 id 不能为空', 400);
   }
 
-  const response = await getActivityLandingDetail(id);
+  const userCtx = await requireUser(_req);
+  const response = await getActivityLandingDetail(
+    id,
+    userCtx?.userId ?? null,
+    userCtx?.user.isProfileComplete ?? false,
+  );
   if (!response) {
     return fail(TRACKING_ERROR_CODES.TRACK_ACTIVITY_NOT_FOUND, '活动不存在或已下架', 404);
   }

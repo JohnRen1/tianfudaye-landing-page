@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, FileText, Shield, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,15 +15,17 @@ interface LoginPageProps {
 
 export function LoginPage({ onBack, onSuccess }: LoginPageProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectPath = searchParams.get("redirectPath") ?? searchParams.get("redirect") ?? "/";
 
   useEffect(() => {
     void hydrateClientAuthFromServer().then((loggedIn) => {
       if (loggedIn) {
         onSuccess?.();
-        router.replace("/");
+        router.replace(redirectPath.startsWith("/") && !redirectPath.startsWith("//") ? redirectPath : "/");
       }
     });
-  }, [onSuccess, router]);
+  }, [onSuccess, redirectPath, router]);
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-primary/10 via-background to-secondary/40 px-4 pb-8 pt-4">

@@ -43,7 +43,7 @@ export async function sendJuheSmsCode(params: {
   form.set('key', key);
   form.set('tpl_value', `#code#=${encodeURIComponent(params.code)}`);
 
-  const response = await fetch('http://v.juhe.cn/sms/send', {
+  const response = await fetch('https://v.juhe.cn/sms/send', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -53,9 +53,18 @@ export async function sendJuheSmsCode(params: {
   });
 
   const body = (await response.json()) as Record<string, unknown>;
+  const errorCode = Number(body.error_code ?? -1);
+  const reason = String(body.reason ?? response.statusText);
 
-  if (!response.ok || Number(body.error_code ?? -1) !== 0) {
-    throw new Error(`JUHE_SMS_SEND_FAILED:${String(body.reason ?? response.statusText)}`);
+  console.info('[sms/juhe] response received', {
+    ok: response.ok,
+    status: response.status,
+    errorCode,
+    reason,
+  });
+
+  if (!response.ok || errorCode !== 0) {
+    throw new Error(`JUHE_SMS_SEND_FAILED:${errorCode}:${reason}`);
   }
 
   return { provider: 'juhe' };

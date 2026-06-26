@@ -5,11 +5,13 @@
  * token 存储 key：'user-token'
  */
 
-import { apiGet, apiPost } from './client';
+import { apiGet, apiPatch, apiPost } from './client';
 import type {
   SendCodeResponseDTO,
   PhoneLoginResponseDTO,
   CurrentUserDTO,
+  UserProfileCompleteDTO,
+  UserProfileCompletedResponseDTO,
 } from '../contracts/auth';
 
 const TOKEN_KEY = 'user-token';
@@ -67,4 +69,14 @@ export async function loginPhone(
  */
 export async function me(): Promise<CurrentUserDTO> {
   return apiGet<CurrentUserDTO>('/api/auth/me');
+}
+
+/**
+ * 补充/更新企业信息
+ * PATCH /api/auth/me/profile
+ */
+export async function updateProfile(
+  body: UserProfileCompleteDTO,
+): Promise<UserProfileCompletedResponseDTO> {
+  return apiPatch<UserProfileCompletedResponseDTO>('/api/auth/me/profile', body);
 }

@@ -41,6 +41,29 @@ function mapErrorMessage(err: unknown): string {
   return "网络异常，请稍后重试";
 }
 
+function getCurrentAuthContext(): { sourceQrId?: string; sourceActivityId?: string; redirectPath: string } {
+  if (typeof window === "undefined") return { redirectPath: "/" };
+
+  const currentUrl = new URL(window.location.href);
+  const sourceQrId = currentUrl.searchParams.get("qr_id") ?? currentUrl.searchParams.get("qr") ?? undefined;
+  const sourceActivityId = currentUrl.searchParams.get("activity_id") ?? currentUrl.searchParams.get("activity") ?? undefined;
+  const configuredRedirect = currentUrl.searchParams.get("redirectPath") ?? currentUrl.searchParams.get("redirect");
+
+  if (configuredRedirect?.startsWith("/") && !configuredRedirect.startsWith("//")) {
+    return { sourceQrId, sourceActivityId, redirectPath: configuredRedirect };
+  }
+
+  if (currentUrl.pathname === "/login") {
+    const homeParams = new URLSearchParams();
+    if (sourceQrId) homeParams.set("qr_id", sourceQrId);
+    if (sourceActivityId) homeParams.set("activity_id", sourceActivityId);
+    const query = homeParams.toString();
+    return { sourceQrId, sourceActivityId, redirectPath: query ? `/?${query}` : "/" };
+  }
+
+  return { sourceQrId, sourceActivityId, redirectPath: `${currentUrl.pathname}${currentUrl.search}` };
+}
+
 export function LoginRegisterForm({
   compact = false,
   submitText = "登录 / 注册",
@@ -114,9 +137,13 @@ export function LoginRegisterForm({
     setLoginType("phone");
     setIsLoading(true);
     try {
-      await loginPhone(phone, code);
-      onSuccess?.();
-      router.push("/");
+      const { sourceQrId, sourceActivityId, redirectPath } = getCurrentAuthContext();
+      await loginPhone(phone, code, sourceQrId, sourceActivityId);
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        router.replace(redirectPath || "/");
+      }
     } catch (err) {
       setError(mapErrorMessage(err));
     } finally {

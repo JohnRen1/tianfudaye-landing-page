@@ -13,6 +13,7 @@ import {
   User,
   ChevronRight,
   CheckCircle,
+  LockKeyhole,
   Building2,
   Sparkles,
 } from "lucide-react";
@@ -23,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { LoginModal } from "./login-modal";
 import { hydrateClientAuthFromServer } from "@/lib/client-auth";
 import { claimMaterial } from "@/lib/api/materials";
+import type { MaterialClaimStatus } from "@/lib/contracts/material";
 
 interface EventMaterial {
   id: string;
@@ -31,6 +33,7 @@ interface EventMaterial {
   fileSize: string | null;
   needLogin: boolean;
   needCompanyInfo: boolean;
+  claimStatus?: MaterialClaimStatus;
 }
 
 interface EventLandingPageProps {
@@ -68,6 +71,10 @@ export function EventLandingPage({
   const isGeneralLanding = !showActivitySections;
 
   useEffect(() => {
+    setDownloadedMaterials((eventData?.materials ?? []).filter((material) => material.claimStatus === "claimed").map((material) => material.id));
+  }, [eventData?.materials]);
+
+  useEffect(() => {
     if (initialLoggedIn) {
       isLoggedInRef.current = true;
       setIsLoggedIn(true);
@@ -88,20 +95,35 @@ export function EventLandingPage({
     setShowLoginModal(true);
   };
 
-  const handleMaterialClick = async (materialId: string) => {
+  const goToProfileComplete = () => {
+    const redirect = `${window.location.pathname}${window.location.search}`;
+    router.push(`/profile/complete?redirect=${encodeURIComponent(redirect)}`);
+  };
+
+  const handleMaterialClick = async (material: EventMaterial) => {
     if (!isLoggedInRef.current) {
-      setPendingAction(() => () => void handleMaterialClick(materialId));
+      setPendingAction(() => () => void handleMaterialClick(material));
       setShowLoginModal(true);
       return;
     }
 
-    setClaimingMaterialId(materialId);
+    if (material.claimStatus === "needs_company_info" || material.needCompanyInfo) {
+      goToProfileComplete();
+      return;
+    }
+
+    setClaimingMaterialId(material.id);
     try {
-      const result = await claimMaterial(materialId, eventData?.id ?? null);
-      setDownloadedMaterials((current) => current.includes(materialId) ? current : [...current, materialId]);
+      const result = await claimMaterial(material.id, eventData?.id ?? null);
+      setDownloadedMaterials((current) => current.includes(material.id) ? current : [...current, material.id]);
       window.open(result.downloadUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "领取资料失败");
+      const message = error instanceof Error ? error.message : "领取资料失败";
+      if (message.includes("企业信息") || message.includes("CLAIM_COMPANY_INFO_REQUIRED")) {
+        goToProfileComplete();
+        return;
+      }
+      window.alert(message);
     } finally {
       setClaimingMaterialId(null);
     }
@@ -245,7 +267,8 @@ export function EventLandingPage({
                       当前活动暂无绑定资料
                     </div>
                   ) : materials.map((material) => {
-                    const isDownloaded = downloadedMaterials.includes(material.id);
+                    const isDownloaded = downloadedMaterials.includes(material.id) || material.claimStatus === "claimed";
+                    const needsCompanyInfo = material.claimStatus === "needs_company_info" || material.needCompanyInfo;
                     const Icon = material.format === "Excel" ? ClipboardCheck : FileText;
                     const isClaiming = claimingMaterialId === material.id;
 
@@ -265,6 +288,12 @@ export function EventLandingPage({
                             <p className="text-xs text-muted-foreground">
                               {material.format} · {material.fileSize ?? "大小未知"}
                             </p>
+                            {needsCompanyInfo ? (
+                              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-[10px] text-warning">
+                                <LockKeyhole className="h-3 w-3" />
+                                需要补充企业信息
+                              </span>
+                            ) : null}
                           </div>
                         </div>
                         <Button
@@ -272,16 +301,22 @@ export function EventLandingPage({
                           variant={isDownloaded ? "outline" : "default"}
                           className={cn(
                             "h-8 min-w-[72px]",
-                            !isDownloaded &&
+                            !isDownloaded && needsCompanyInfo && "bg-primary text-primary-foreground hover:bg-primary/90",
+                            !isDownloaded && !needsCompanyInfo &&
                               "bg-accent text-accent-foreground hover:bg-accent/90"
                           )}
-                          onClick={() => void handleMaterialClick(material.id)}
+                          onClick={() => void handleMaterialClick(material)}
                           disabled={isClaiming}
                         >
                           {isDownloaded ? (
                             <>
                               <CheckCircle className="mr-1 h-3 w-3" />
                               已领取
+                            </>
+                          ) : needsCompanyInfo ? (
+                            <>
+                              <LockKeyhole className="mr-1 h-3 w-3" />
+                              补充后领取
                             </>
                           ) : (
                             <>

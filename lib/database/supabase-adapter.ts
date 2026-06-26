@@ -26,6 +26,8 @@ import type {
   CurrentUserDTO,
   PhoneLoginResponseDTO,
   SendCodeResponseDTO,
+  UserProfileCompleteDTO,
+  UserProfileCompletedResponseDTO,
   WechatLoginResponseDTO,
 } from '../contracts/auth';
 import type {
@@ -973,7 +975,11 @@ const FILE_FORMAT_LABEL: Record<string, string> = {
   docx: 'Word',
 };
 
-async function listActivityLandingMaterials(activityId: string): Promise<ActivityMaterialDisplayDTO[]> {
+async function listActivityLandingMaterials(
+  activityId: string,
+  userId?: string | null,
+  isProfileComplete = false,
+): Promise<ActivityMaterialDisplayDTO[]> {
   const serviceClient = createServiceClient();
   const { data, error } = await serviceClient
     .from('activity_materials')
@@ -988,19 +994,52 @@ async function listActivityLandingMaterials(activityId: string): Promise<Activit
 
   if (error) throw new Error(error.message);
 
-  return ((data ?? []) as Record<string, unknown>[])
+  const materialRows = ((data ?? []) as Record<string, unknown>[])
     .map((row) => {
       const join = row.materials as Record<string, unknown>[] | Record<string, unknown> | null;
       const material = Array.isArray(join) ? (join[0] ?? null) : join;
       if (!material || material.status !== 'published') return null;
+      return material;
+    })
+    .filter((material): material is Record<string, unknown> => material !== null);
+
+  const claimedIds = new Set<string>();
+  if (userId && materialRows.length > 0) {
+    const materialIds = materialRows.map((material) => material.id as string);
+    const { data: claims, error: claimsError } = await serviceClient
+      .from('material_claims')
+      .select('material_id')
+      .eq('user_id', userId)
+      .in('material_id', materialIds);
+
+    if (claimsError) throw new Error(claimsError.message);
+    for (const claim of (claims ?? []) as Record<string, unknown>[]) {
+      if (typeof claim.material_id === 'string') claimedIds.add(claim.material_id);
+    }
+  }
+
+  return materialRows
+    .map((material) => {
+      const needLogin = Boolean(material.need_login);
+      const needCompanyInfo = Boolean(material.need_company_info);
+      const id = material.id as string;
       const format = String(material.format ?? 'pdf');
+      const claimStatus = claimedIds.has(id)
+        ? 'claimed'
+        : needCompanyInfo && !isProfileComplete
+          ? 'needs_company_info'
+          : needLogin && !userId
+            ? 'needs_login'
+            : 'available';
+
       return {
-        id: material.id as string,
+        id,
         title: material.name as string,
         format: FILE_FORMAT_LABEL[format] ?? format.toUpperCase(),
         fileSize: formatFileSize(material.file_size_bytes),
-        needLogin: Boolean(material.need_login),
-        needCompanyInfo: Boolean(material.need_company_info),
+        needLogin,
+        needCompanyInfo,
+        claimStatus,
       };
     })
     .filter((item): item is ActivityMaterialDisplayDTO => item !== null);
@@ -1026,7 +1065,11 @@ function mapTrackingActivity(row: Record<string, unknown>, materials: ActivityMa
   };
 }
 
-export async function getActivityLandingDetail(activityId: string): Promise<ActivityLandingDetailDTO | null> {
+export async function getActivityLandingDetail(
+  activityId: string,
+  userId?: string | null,
+  isProfileComplete = false,
+): Promise<ActivityLandingDetailDTO | null> {
   const serviceClient = createServiceClient();
   const { data: activity, error } = await serviceClient
     .from('activities')
@@ -1036,7 +1079,7 @@ export async function getActivityLandingDetail(activityId: string): Promise<Acti
     .single();
 
   if (error || !activity) return null;
-  const materials = await listActivityLandingMaterials(activityId);
+  const materials = await listActivityLandingMaterials(activityId, userId, isProfileComplete);
   return mapTrackingActivity(activity as Record<string, unknown>, materials);
 }
 
@@ -1044,6 +1087,8 @@ export async function trackQrScan(params: {
   qrCodeId: string;
   sessionId?: string | null;
   userAgent?: string | null;
+  userId?: string | null;
+  isProfileComplete?: boolean;
 }): Promise<QrScanTrackResponseDTO | null> {
   const serviceClient = createServiceClient();
   const { data: qrCode, error } = await serviceClient
@@ -1098,7 +1143,11 @@ export async function trackQrScan(params: {
   const activityJoin = qrCode.activities as Record<string, unknown>[] | Record<string, unknown> | null;
   const activity = Array.isArray(activityJoin) ? (activityJoin[0] ?? null) : activityJoin;
   const materials = activity && qrCode.activity_id
-    ? await listActivityLandingMaterials(qrCode.activity_id as string)
+    ? await listActivityLandingMaterials(
+        qrCode.activity_id as string,
+        params.userId ?? null,
+        params.isProfileComplete ?? false,
+      )
     : [];
 
   return {
@@ -1267,6 +1316,38 @@ export function buildPhoneLoginResponse(params: {
     user: params.user,
     isNew: params.isNew,
   };
+}
+
+export async function updateUserProfile(
+  userId: string,
+  body: UserProfileCompleteDTO,
+): Promise<UserProfileCompletedResponseDTO> {
+  const serviceClient = createServiceClient();
+  const company = body.company?.trim();
+  const industry = body.industry?.trim();
+
+  if (!company) throw new Error('COMPANY_REQUIRED');
+  if (!industry) throw new Error('INDUSTRY_REQUIRED');
+
+  const payload: Record<string, unknown> = {
+    company,
+    industry,
+    is_profile_complete: true,
+    updated_at: new Date().toISOString(),
+  };
+  if (body.name?.trim()) payload.name = body.name.trim();
+  if (body.identity?.trim()) payload.identity = body.identity.trim();
+  if (body.size?.trim()) payload.size = body.size.trim();
+
+  const { data, error } = await serviceClient
+    .from('users')
+    .update(payload)
+    .eq('id', userId)
+    .select('id, phone, name, identity, company, industry, size, registered_at, active_at, is_profile_complete')
+    .single();
+
+  if (error || !data) throw new Error(error?.message ?? '企业信息保存失败');
+  return { user: mapCurrentUser(data as Record<string, unknown>) };
 }
 
 export async function getUserByWechatOpenId(openid: string): Promise<CurrentUserDTO | null> {

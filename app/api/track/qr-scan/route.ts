@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { trackQrScan } from '@/lib/db';
+import { requireUser } from '@/lib/auth';
 import { ok, fail } from '@/lib/api-response';
 import type { QrScanTrackRequestDTO } from '@/lib/contracts/tracking';
 
@@ -26,10 +27,13 @@ export async function POST(req: NextRequest) {
     return fail('INVALID_QR_CODE_ID', 'qrCodeId 不能为空', 400);
   }
 
+  const userCtx = await requireUser(req);
   const response = await trackQrScan({
     qrCodeId,
     sessionId: typeof sessionId === 'string' ? sessionId : null,
     userAgent: typeof userAgent === 'string' ? userAgent : null,
+    userId: userCtx?.userId ?? null,
+    isProfileComplete: userCtx?.user.isProfileComplete ?? false,
   });
 
   if (!response) {
