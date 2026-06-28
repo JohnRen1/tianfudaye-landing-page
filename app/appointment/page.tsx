@@ -59,6 +59,8 @@ function AppointmentForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sourceLeadId = searchParams.get("leadId") ?? undefined;
+  const sourceQrId = searchParams.get("qr") ?? searchParams.get("qr_id") ?? (typeof window !== "undefined" ? localStorage.getItem("qr_id") : null) ?? undefined;
+  const sourceActivityId = searchParams.get("activity") ?? searchParams.get("activity_id") ?? (typeof window !== "undefined" ? localStorage.getItem("activity_id") : null) ?? undefined;
 
   const [form, setForm] = useState<FormState>(initialForm);
   const [errors, setErrors] = useState<ErrorState>({});
@@ -111,6 +113,8 @@ function AppointmentForm() {
         ...(form.wechat.trim() && { wechat: form.wechat.trim() }),
         ...(form.uploadIntent && { uploadIntent: form.uploadIntent }),
         ...(sourceLeadId && { sourceLeadId }),
+        ...(sourceQrId && { sourceQrId }),
+        ...(sourceActivityId && { sourceActivityId }),
       });
 
       // 持久化预约 ID 供"查看我的预约"页使用

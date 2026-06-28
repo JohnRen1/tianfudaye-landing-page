@@ -23,14 +23,20 @@ export function LandingHomeClient({ fallback }: LandingHomeClientProps) {
     async function loadLandingActivity() {
       try {
         if (qrId) {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('qr_id', qrId);
+            if (activityId) localStorage.setItem('activity_id', activityId);
+          }
           const result = await trackQrScan(qrId, undefined, navigator.userAgent);
           if (!ignored && result.activity) {
+            if (typeof window !== 'undefined') localStorage.setItem('activity_id', result.activity.id);
             setActivity(result.activity);
           }
           return;
         }
 
         if (activityId) {
+          if (typeof window !== 'undefined') localStorage.setItem('activity_id', activityId);
           const result = await getActivityLanding(activityId);
           if (!ignored) {
             setActivity(result);

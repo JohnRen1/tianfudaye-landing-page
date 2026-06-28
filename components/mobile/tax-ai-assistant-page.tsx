@@ -296,12 +296,21 @@ function AiLoadingCard() {
 
 function useActivityId(): string | null {
   const searchParams = useSearchParams();
-  const fromUrl = searchParams.get("activity_id");
-  if (fromUrl) return fromUrl;
-  if (typeof window !== "undefined") {
-    return localStorage.getItem("activity_id");
-  }
-  return null;
+  const fromUrl =
+    searchParams.get("activity_id") ?? searchParams.get("activity");
+
+  const [activityId, setActivityId] = useState<string | null>(fromUrl ?? null);
+
+  useEffect(() => {
+    if (fromUrl) {
+      setActivityId(fromUrl);
+      return;
+    }
+    const stored = localStorage.getItem("activity_id");
+    if (stored) setActivityId(stored);
+  }, [fromUrl]);
+
+  return activityId;
 }
 
 export function TaxAiAssistantPage() {

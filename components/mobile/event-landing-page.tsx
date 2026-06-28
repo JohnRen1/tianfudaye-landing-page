@@ -86,6 +86,19 @@ export function EventLandingPage({
     });
   }, [initialLoggedIn]);
 
+  const withTrackingParams = (path: string) => {
+    if (typeof window === "undefined") return path;
+    const url = new URL(path, window.location.origin);
+    const currentUrl = new URL(window.location.href);
+    const qrId = currentUrl.searchParams.get("qr_id") ?? localStorage.getItem("qr_id");
+    const activityId = currentUrl.searchParams.get("activity_id") ?? eventData?.id ?? localStorage.getItem("activity_id");
+    if (qrId) url.searchParams.set("qr", qrId);
+    if (activityId) url.searchParams.set("activity", activityId);
+    if (qrId) url.searchParams.set("qr_id", qrId);
+    if (activityId) url.searchParams.set("activity_id", activityId);
+    return `${url.pathname}${url.search}`;
+  };
+
   const requireLogin = (action: () => void) => {
     if (isLoggedInRef.current) {
       action();
@@ -151,7 +164,7 @@ export function EventLandingPage({
               AA级税务师事务所
             </div>
             <h1 className="text-2xl font-bold leading-tight text-balance">
-              天赋大业律师事务所
+              天赋大业税务师事务所
             </h1>
             <p className="mt-3 text-sm leading-relaxed text-blue-50/85">
               以专业税务服务、财税咨询与企业培训为基础，帮助企业识别风险、规范管理、提升经营决策质量。
@@ -356,7 +369,7 @@ export function EventLandingPage({
           {/* AI 税务助手 */}
           <Card
             className="cursor-pointer border-0 shadow-sm transition-all hover:shadow-md"
-            onClick={() => requireLogin(() => router.push("/tax-ai"))}
+            onClick={() => requireLogin(() => router.push(withTrackingParams("/tax-ai")))}
           >
             <CardContent className="flex items-center gap-4 p-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80">
@@ -375,7 +388,7 @@ export function EventLandingPage({
           {/* 财税风险测评 */}
           <Card
             className="cursor-pointer border-0 shadow-sm transition-all hover:shadow-md"
-            onClick={() => requireLogin(() => router.push("/risk-assessment"))}
+            onClick={() => requireLogin(() => router.push(withTrackingParams("/risk-assessment")))}
           >
             <CardContent className="flex items-center gap-4 p-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-warning to-warning/80">
@@ -394,7 +407,7 @@ export function EventLandingPage({
           {/* 资料领取 */}
           <Card
             className="cursor-pointer border-0 shadow-sm transition-all hover:shadow-md"
-            onClick={() => requireLogin(() => router.push("/materials"))}
+            onClick={() => requireLogin(() => router.push(withTrackingParams("/materials")))}
           >
             <CardContent className="flex items-center gap-4 p-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
@@ -454,14 +467,14 @@ export function EventLandingPage({
           <Button
             variant="outline"
             className="flex-1"
-            onClick={() => requireLogin(() => router.push("/support"))}
+            onClick={() => requireLogin(() => router.push(withTrackingParams("/support")))}
           >
             <MessageSquare className="mr-2 h-4 w-4" />
             咨询客服
           </Button>
           <Button
             className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
-            onClick={() => requireLogin(() => router.push("/appointment"))}
+            onClick={() => requireLogin(() => router.push(withTrackingParams("/appointment")))}
           >
             <Calendar className="mr-2 h-4 w-4" />
             立即预约

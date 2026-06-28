@@ -24,9 +24,23 @@ export function RiskAssessmentQuizPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // 从 URL 读取归因参数（由活动二维码落地页写入）
-  const sourceQrId = searchParams.get("qr") ?? null;
-  const sourceActivityId = searchParams.get("activity") ?? null;
+  const urlQrId = searchParams.get("qr") ?? searchParams.get("qr_id");
+  const urlActivityId = searchParams.get("activity") ?? searchParams.get("activity_id");
+
+  // localStorage 兜底：SSR 阶段 window 不存在，必须在 useEffect 里读取
+  const [sourceQrId, setSourceQrId] = useState<string | null>(urlQrId ?? null);
+  const [sourceActivityId, setSourceActivityId] = useState<string | null>(urlActivityId ?? null);
+
+  useEffect(() => {
+    if (!urlQrId) {
+      const stored = localStorage.getItem("qr_id");
+      if (stored) setSourceQrId(stored);
+    }
+    if (!urlActivityId) {
+      const stored = localStorage.getItem("activity_id");
+      if (stored) setSourceActivityId(stored);
+    }
+  }, [urlQrId, urlActivityId]);
 
   // 题目加载状态
   const [questions, setQuestions] = useState<QuestionPublicDTO[]>([]);

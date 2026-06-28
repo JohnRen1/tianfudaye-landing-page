@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   BookOpen,
@@ -62,6 +62,17 @@ function formatFileSize(bytes: number | null): string {
 
 export function MaterialsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const urlActivityId = searchParams.get("activity") ?? searchParams.get("activity_id");
+  const [activityId, setActivityId] = useState<string | null>(urlActivityId ?? null);
+
+  useEffect(() => {
+    if (!urlActivityId) {
+      const stored = localStorage.getItem("activity_id");
+      if (stored) setActivityId(stored);
+    }
+  }, [urlActivityId]);
   const [activeCategory, setActiveCategory] = useState<MaterialType>("courseware");
   const [materials, setMaterials] = useState<MaterialLandingItemDTO[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,7 +92,7 @@ export function MaterialsPage() {
     setLoading(true);
     setErrorMessage(null);
     try {
-      const result = await getMaterials({ page: 1, pageSize: 50 });
+      const result = await getMaterials({ page: 1, pageSize: 50, ...(activityId ? { activityId } : {}) });
       setMaterials(result.items);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "资料加载失败");
@@ -94,7 +105,7 @@ export function MaterialsPage() {
     void hydrateClientAuthFromServer().then(() => {
       void loadMaterials();
     });
-  }, []);
+  }, [activityId]);
 
   const goToProfileComplete = () => {
     const redirect = `${window.location.pathname}${window.location.search}`;
@@ -115,7 +126,7 @@ export function MaterialsPage() {
 
     setClaimingId(material.id);
     try {
-      const result = await claimMaterial(material.id, null);
+      const result = await claimMaterial(material.id, activityId ?? null);
       setMaterials((currentMaterials) =>
         currentMaterials.map((item) =>
           item.id === material.id

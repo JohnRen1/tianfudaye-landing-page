@@ -66,6 +66,33 @@ export function createServiceClient() {
   return createSupabaseServiceClient();
 }
 
+const ACTIVITY_COUNTER_COLUMNS = new Set([
+  'register',
+  'ai_questions',
+  'assessments',
+  'material_claims',
+  'appointments',
+  'scan',
+  'high_intent_leads',
+] as const);
+
+type ActivityCounterColumn = typeof ACTIVITY_COUNTER_COLUMNS extends Set<infer T> ? T : never;
+
+async function incrementActivityCounter(
+  client: ReturnType<typeof createSupabaseServiceClient>,
+  activityId: string,
+  column: ActivityCounterColumn,
+): Promise<void> {
+  if (!ACTIVITY_COUNTER_COLUMNS.has(column)) return;
+  const { error } = await client.rpc('increment_activity_counter', {
+    p_activity_id: activityId,
+    p_column: column,
+  });
+  if (error) {
+    console.error(`[activity-counter] increment ${column} failed for activity ${activityId}:`, error.message ?? error);
+  }
+}
+
 export async function getCurrentUserById(userId: string): Promise<CurrentUserDTO | null> {
   const serviceClient = createServiceClient();
   const { data: row } = await serviceClient
@@ -453,6 +480,10 @@ export async function submitAssessment(
     console.error('[assessment/db] raw answers insert failed', rawAnswerError);
   }
 
+  if (payload.sourceActivityId) {
+    await incrementActivityCounter(serviceClient, payload.sourceActivityId, 'assessments');
+  }
+
   return { reportId, score: totalScore, riskLevel, modules };
 }
 
@@ -688,6 +719,13 @@ export async function createAppointment(params: {
     logAssessmentDb('appointment lead status synced', { appointmentId, leadId, userId: params.userId });
   }
 
+  const apptActivityId = typeof params.body.sourceActivityId === 'string' && params.body.sourceActivityId
+    ? params.body.sourceActivityId
+    : null;
+  if (apptActivityId) {
+    await incrementActivityCounter(serviceClient, apptActivityId, 'appointments');
+  }
+
   return {
     id: appointmentId,
     leadId,
@@ -757,6 +795,10 @@ export async function createQaRecord(params: {
     .single();
 
   if (error || !record) throw new Error(error?.message ?? '问答记录保存失败');
+
+  if (params.activityId) {
+    await incrementActivityCounter(serviceClient, params.activityId, 'ai_questions');
+  }
 
   return {
     qaRecordId: record.id as string,
@@ -865,6 +907,10 @@ export async function claimMaterial(params: {
     .update({ downloaded_at: new Date().toISOString() })
     .eq('id', claim.id as string)
     .is('downloaded_at', null);
+
+  if (params.activityId) {
+    await incrementActivityCounter(serviceClient, params.activityId, 'material_claims');
+  }
 
   return {
     claimId: claim.id as string,
@@ -1124,9 +1170,19 @@ export async function trackQrScan(params: {
     .eq('id', params.qrCodeId);
 
   if (qrCode.activity_id) {
+    const { data: activityQrCodes } = await serviceClient
+      .from('qr_codes')
+      .select('scans')
+      .eq('activity_id', qrCode.activity_id as string);
+
+    const activityScan = ((activityQrCodes ?? []) as Record<string, unknown>[]).reduce(
+      (total, item) => total + ((item.scans as number | null) ?? 0),
+      0,
+    );
+
     await serviceClient
       .from('activities')
-      .update({ scan: (qrCode as Record<string, unknown>).scan as number ?? 0 })
+      .update({ scan: activityScan })
       .eq('id', qrCode.activity_id as string);
   }
 
@@ -1293,6 +1349,10 @@ export async function loginOrCreateUserByPhone(params: {
 
     if (error || !newUser) throw new Error(error?.message ?? '用户创建失败');
     userId = newUser.id as string;
+
+    if (params.sourceActivityId) {
+      await incrementActivityCounter(serviceClient, params.sourceActivityId, 'register');
+    }
   }
 
   const { data: userData } = await serviceClient

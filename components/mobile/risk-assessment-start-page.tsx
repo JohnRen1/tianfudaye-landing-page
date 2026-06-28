@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   BadgeCheck,
@@ -48,18 +48,29 @@ const dimensions = [
 
 export function RiskAssessmentStartPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [showLoginModal, setShowLoginModal] = useState(false);
 
   useEffect(() => {
     void hydrateClientAuthFromServer();
   }, []);
 
+  const buildQuizPath = () => {
+    const params = new URLSearchParams();
+    const qrId = searchParams.get("qr") ?? searchParams.get("qr_id") ?? localStorage.getItem("qr_id");
+    const activityId = searchParams.get("activity") ?? searchParams.get("activity_id") ?? localStorage.getItem("activity_id");
+    if (qrId) params.set("qr", qrId);
+    if (activityId) params.set("activity", activityId);
+    const query = params.toString();
+    return query ? `/risk-assessment/quiz?${query}` : "/risk-assessment/quiz";
+  };
+
   const startAssessment = () => {
     if (!isClientLoggedIn()) {
       setShowLoginModal(true);
       return;
     }
-    router.push("/risk-assessment/quiz");
+    router.push(buildQuizPath());
   };
 
   const handleBack = () => {
@@ -207,7 +218,7 @@ export function RiskAssessmentStartPage() {
         onOpenChange={setShowLoginModal}
         onSuccess={() => {
           setShowLoginModal(false);
-          router.push("/risk-assessment/quiz");
+          router.push(buildQuizPath());
         }}
       />
     </div>
