@@ -1,4 +1,5 @@
 import * as cloudbase from './cloudbase-adapter';
+import * as homepageSupabase from './homepage-supabase';
 import * as supabase from './supabase-adapter';
 
 export type DatabaseProvider = 'supabase' | 'cloudbase';
@@ -35,3 +36,7 @@ export const buildPhoneLoginResponse = adapter.buildPhoneLoginResponse;
 export const updateUserProfile = adapter.updateUserProfile;
 export const getUserByWechatOpenId = adapter.getUserByWechatOpenId;
 export const buildWechatLoginResponse = adapter.buildWechatLoginResponse;
+export const getCheckinPageData = adapter.getCheckinPageData;
+export const submitCheckin = adapter.submitCheckin;
+export const getHomepageSurveyActive = homepageSupabase.getHomepageSurveyActive;
+export const submitHomepageSurvey = homepageSupabase.submitHomepageSurvey;

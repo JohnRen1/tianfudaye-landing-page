@@ -112,11 +112,11 @@ export interface AppointmentCreateDTO {
    */
   phone: string;
   /**
-   * 必填：咨询主题（英文枚举，S4 统一）。
-   * 审计修复：原 topics 为中文字符串数组，改为枚举，前端表单展示时
-   * 通过 APPOINTMENT_TOPIC_LABEL 映射中文。
+   * 选填：咨询主题（英文枚举，S4 统一）。
+   * 活动报名场景下可不填，服务端默认记为 'other'。
+   * 展示层通过 APPOINTMENT_TOPIC_LABEL 映射中文。
    */
-  topic: AppointmentTopic;
+  topic?: AppointmentTopic;
   /** 必填：问题描述 */
   description: string;
   /** 必填：企业名称 */

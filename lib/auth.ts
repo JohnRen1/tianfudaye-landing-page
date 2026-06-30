@@ -42,3 +42,24 @@ export async function requireUser(req: NextRequest): Promise<UserContext | null>
 
   return { userId, user };
 }
+
+/**
+ * 可选认证：有 token 则解析用户，无 token 或无效 token 则返回 null。
+ * 用于既支持已登录也支持匿名访问的接口（如签到页数据查询）。
+ */
+export async function optionalUser(req: NextRequest): Promise<UserContext | null> {
+  const authHeader = req.headers.get('authorization');
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const cookieToken = req.cookies.get(USER_AUTH_TOKEN_COOKIE)?.value ?? null;
+  const token = bearerToken || cookieToken;
+
+  if (!token) return null;
+
+  const userId = parseUserAuthToken(token);
+  if (!userId) return null;
+
+  const user = await getCurrentUserById(userId);
+  if (!user) return null;
+
+  return { userId, user };
+}

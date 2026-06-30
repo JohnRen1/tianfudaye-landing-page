@@ -472,13 +472,23 @@ export function EventLandingPage({
             <MessageSquare className="mr-2 h-4 w-4" />
             咨询客服
           </Button>
-          <Button
-            className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
-            onClick={() => requireLogin(() => router.push(withTrackingParams("/appointment")))}
-          >
-            <Calendar className="mr-2 h-4 w-4" />
-            立即预约
-          </Button>
+          {isGeneralLanding ? (
+            <Button
+              className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
+              onClick={() => requireLogin(() => router.push(withTrackingParams("/homepage-survey")))}
+            >
+              <Calendar className="mr-2 h-4 w-4" />
+              沙龙投票
+            </Button>
+          ) : (
+            <Button
+              className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
+              onClick={() => requireLogin(() => router.push(withTrackingParams("/appointment")))}
+            >
+              <Calendar className="mr-2 h-4 w-4" />
+              立即预约
+            </Button>
+          )}
         </div>
       </div>
 

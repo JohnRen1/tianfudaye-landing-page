@@ -74,6 +74,7 @@ const ACTIVITY_COUNTER_COLUMNS = new Set([
   'appointments',
   'scan',
   'high_intent_leads',
+  'checkin_count',
 ] as const);
 
 type ActivityCounterColumn = typeof ACTIVITY_COUNTER_COLUMNS extends Set<infer T> ? T : never;
@@ -1432,5 +1433,157 @@ export function buildWechatLoginResponse(params: {
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     user: params.user,
     isNew: params.isNew,
+  };
+}
+
+// ============================================================================
+// 签到模块
+// ============================================================================
+
+import type {
+  CheckinPageDTO,
+  CheckinSubmitDTO,
+  CheckinSubmitResponseDTO,
+  CheckinWindowStatus,
+} from '../contracts/checkin';
+
+/**
+ * 查询活动二维码签到信息，返回落地页签到页所需全部数据。
+ * 同时查当前用户是否已签到（userId 为 null 时 alreadyCheckedIn = false）。
+ */
+export async function getCheckinPageData(
+  qrCodeId: string,
+  userId: string | null,
+): Promise<CheckinPageDTO> {
+  const serviceClient = createServiceClient();
+
+  // 查活动二维码（签到复用活动二维码）
+  const { data: qr, error: qrError } = await serviceClient
+    .from('qr_codes')
+    .select('id, type, status, activity_id')
+    .eq('id', qrCodeId)
+    .single();
+
+  if (qrError || !qr) throw new Error('CHECKIN_QR_NOT_FOUND');
+  if ((qr.type as string) !== 'activity') throw new Error('CHECKIN_QR_NOT_ACTIVITY_TYPE');
+  if ((qr.status as string) !== 'active') throw new Error('CHECKIN_QR_NOT_FOUND');
+
+  const activityId = qr.activity_id as string;
+  if (!activityId) throw new Error('CHECKIN_ACTIVITY_NOT_FOUND');
+
+  // 查活动信息
+  const { data: activity, error: actError } = await serviceClient
+    .from('activities')
+    .select('id, name, start_at, end_at, place, checkin_window_before_minutes, checkin_window_after_minutes, checkin_force_open, checkin_force_closed, checkin_count')
+    .eq('id', activityId)
+    .single();
+
+  if (actError || !activity) throw new Error('CHECKIN_ACTIVITY_NOT_FOUND');
+
+  // 调用数据库函数获取窗口状态
+  const { data: windowResult } = await serviceClient
+    .rpc('get_checkin_window_status', { p_activity_id: activityId });
+  const windowStatus: CheckinWindowStatus = (windowResult as CheckinWindowStatus | null) ?? 'activity_not_found';
+
+  // 计算窗口时间（展示用）
+  const startAt = new Date(activity.start_at as string);
+  const endAt = activity.end_at ? new Date(activity.end_at as string) : new Date(startAt.getTime() + 3 * 60 * 60 * 1000);
+  const beforeMin = (activity.checkin_window_before_minutes as number) ?? 30;
+  const afterMin = (activity.checkin_window_after_minutes as number) ?? 60;
+  const windowOpenAt = new Date(startAt.getTime() - beforeMin * 60 * 1000);
+  const windowCloseAt = new Date(endAt.getTime() + afterMin * 60 * 1000);
+
+  // 查当前用户是否已签到
+  let alreadyCheckedIn = false;
+  if (userId) {
+    const { data: existing } = await serviceClient
+      .from('activity_checkins')
+      .select('id')
+      .eq('activity_id', activityId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    alreadyCheckedIn = Boolean(existing);
+  }
+
+  // 格式化活动时间展示
+  const dateStr = startAt.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Shanghai' });
+  const timeStr = `${startAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai' })} - ${endAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai' })}`;
+
+  return {
+    activityId,
+    activityName: activity.name as string,
+    activityDate: dateStr,
+    activityTime: timeStr,
+    activityLocation: activity.place as string,
+    windowStatus,
+    windowOpenAt: (activity.checkin_force_open as boolean) ? null : windowOpenAt.toISOString(),
+    windowCloseAt: (activity.checkin_force_closed as boolean) ? null : windowCloseAt.toISOString(),
+    checkinCount: (activity.checkin_count as number) ?? 0,
+    alreadyCheckedIn,
+    checkinQrId: qrCodeId,
+  };
+}
+
+/**
+ * 提交签到。
+ * 校验窗口 → 防重复 → 写入记录 → 计数器 +1。
+ */
+export async function submitCheckin(
+  params: CheckinSubmitDTO & { userId: string; ipAddress?: string },
+): Promise<CheckinSubmitResponseDTO> {
+  const serviceClient = createServiceClient();
+
+  // 查活动二维码和活动
+  const { data: qr, error: qrError } = await serviceClient
+    .from('qr_codes')
+    .select('id, type, status, activity_id')
+    .eq('id', params.checkinQrId)
+    .single();
+
+  if (qrError || !qr) throw new Error('CHECKIN_QR_NOT_FOUND');
+  if ((qr.type as string) !== 'activity') throw new Error('CHECKIN_QR_NOT_ACTIVITY_TYPE');
+  if ((qr.status as string) !== 'active') throw new Error('CHECKIN_QR_NOT_FOUND');
+
+  const activityId = qr.activity_id as string;
+  if (!activityId) throw new Error('CHECKIN_ACTIVITY_NOT_FOUND');
+
+  // 检查窗口
+  const { data: windowResult } = await serviceClient
+    .rpc('get_checkin_window_status', { p_activity_id: activityId });
+  if (windowResult !== 'open') throw new Error('CHECKIN_WINDOW_NOT_OPEN');
+
+  // 防重复：尝试插入，UNIQUE 约束冲突即已签到
+  const { data: newCheckin, error: insertError } = await serviceClient
+    .from('activity_checkins')
+    .insert({
+      activity_id: activityId,
+      user_id: params.userId,
+      checkin_qr_id: params.checkinQrId,
+      ip_address: params.ipAddress ?? null,
+    })
+    .select('id, checked_in_at')
+    .single();
+
+  if (insertError) {
+    if (insertError.code === '23505') throw new Error('CHECKIN_ALREADY_DONE');
+    throw new Error(insertError.message ?? '签到失败');
+  }
+
+  // 计数器 +1
+  await incrementActivityCounter(serviceClient, activityId, 'checkin_count');
+
+  // 查最新计数
+  const { data: updated } = await serviceClient
+    .from('activities')
+    .select('name, checkin_count')
+    .eq('id', activityId)
+    .single();
+
+  return {
+    checkinId: newCheckin.id as string,
+    activityId,
+    activityName: (updated?.name as string | null) ?? '',
+    checkedInAt: newCheckin.checked_in_at as string,
+    checkinCount: (updated?.checkin_count as number | null) ?? 0,
   };
 }

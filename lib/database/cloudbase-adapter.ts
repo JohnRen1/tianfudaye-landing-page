@@ -149,3 +149,9 @@ export const getUserByWechatOpenId: typeof SupabaseAdapter.getUserByWechatOpenId
 
 export const buildWechatLoginResponse: typeof SupabaseAdapter.buildWechatLoginResponse = () =>
   notImplemented('buildWechatLoginResponse');
+
+export const getCheckinPageData: typeof SupabaseAdapter.getCheckinPageData = async () =>
+  notImplemented('getCheckinPageData');
+
+export const submitCheckin: typeof SupabaseAdapter.submitCheckin = async () =>
+  notImplemented('submitCheckin');

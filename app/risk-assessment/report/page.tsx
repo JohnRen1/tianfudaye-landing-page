@@ -440,7 +440,7 @@ function RiskReportContent() {
                 ) : (
                   <LockKeyhole className="mr-2 h-4 w-4" />
                 )}
-                {unlocking ? "解锁中…" : "手机号登录查看完整报告"}
+                {unlocking ? "解锁中…" : isLoggedIn ? "查看完整报告" : "手机号登录查看完整报告"}
               </Button>
             </CardContent>
           </Card>
