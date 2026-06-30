@@ -43,6 +43,7 @@ import type {
 import type {
   ActivityMaterialDisplayDTO,
 } from '../contracts/activity';
+import { formatShanghaiDate, formatShanghaiTime } from '../activity-time';
 import type { PaginatedData, RiskLevel } from '../contracts/shared';
 
 export type DatabaseProvider = 'supabase' | 'cloudbase';
@@ -1095,15 +1096,15 @@ async function listActivityLandingMaterials(
 function mapTrackingActivity(row: Record<string, unknown>, materials: ActivityMaterialDisplayDTO[] = []): TrackingActivityDTO {
   const startAt = row.start_at as string;
   const endAt = (row.end_at as string | null) ?? null;
-  const timeStart = startAt.slice(11, 16);
+  const timeStart = formatShanghaiTime(startAt);
 
   return {
     id: row.id as string,
     name: row.name as string,
     speaker: row.teacher as string,
     speakerTitle: (row.speaker_title as string) ?? '',
-    date: startAt.slice(0, 10),
-    time: endAt ? `${timeStart} - ${endAt.slice(11, 16)}` : timeStart,
+    date: formatShanghaiDate(startAt),
+    time: endAt ? `${timeStart} - ${formatShanghaiTime(endAt)}` : timeStart,
     location: row.place as string,
     description: (row.description as string) ?? '',
     coverImage: (row.cover_image as string | null) ?? null,
