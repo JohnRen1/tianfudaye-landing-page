@@ -25,6 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { hydrateClientAuthFromServer, isClientLoggedIn } from "@/lib/client-auth";
+import { buildPathWithTracking } from "@/lib/tracking-context";
 import { LoginModal } from "./login-modal";
 
 const valueItems = [
@@ -55,15 +56,7 @@ export function RiskAssessmentStartPage() {
     void hydrateClientAuthFromServer();
   }, []);
 
-  const buildQuizPath = () => {
-    const params = new URLSearchParams();
-    const qrId = searchParams.get("qr") ?? searchParams.get("qr_id") ?? localStorage.getItem("qr_id");
-    const activityId = searchParams.get("activity") ?? searchParams.get("activity_id") ?? localStorage.getItem("activity_id");
-    if (qrId) params.set("qr", qrId);
-    if (activityId) params.set("activity", activityId);
-    const query = params.toString();
-    return query ? `/risk-assessment/quiz?${query}` : "/risk-assessment/quiz";
-  };
+  const buildQuizPath = () => buildPathWithTracking("/risk-assessment/quiz", searchParams);
 
   const startAssessment = () => {
     if (!isClientLoggedIn()) {
@@ -78,7 +71,7 @@ export function RiskAssessmentStartPage() {
       router.back();
       return;
     }
-    router.push("/");
+    router.push(buildPathWithTracking("/", searchParams));
   };
 
   return (

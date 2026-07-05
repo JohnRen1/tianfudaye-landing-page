@@ -224,28 +224,29 @@ const MODULE_COPY: Record<ReportModuleKey, Record<RiskLevel, { desc: string; adv
       desc: '税务异常信号较明显，稽查应对风险较高。',
       advice: '建议提前准备风险说明和备查资料，必要时开展自查。',
     },
-    critical: {
-      desc: '存在较严重税务异常信号，需要尽快形成应对方案。',
-      advice: '建议预约顾问进行专项诊断，避免被动应对。',
-    },
   },
 };
 
 function scoreToRiskLevel(score: number): RiskLevel {
-  if (score >= 85) return 'critical';
   if (score >= 65) return 'high';
   if (score >= 35) return 'medium';
   return 'low';
 }
 
+function normalizeRiskLevel(value: unknown): RiskLevel {
+  if (value === 'critical') return 'high';
+  if (value === 'high' || value === 'medium' || value === 'low') return value;
+  return 'low';
+}
+
 function buildSuggestions(modules: ModuleScorePublicDTO[], totalRiskLevel: RiskLevel): string[] {
   const riskyModules = [...modules]
-    .filter((moduleValue) => moduleValue.riskLevel === 'high' || moduleValue.riskLevel === 'critical')
+    .filter((moduleValue) => moduleValue.riskLevel === 'high')
     .sort((a, b) => b.score - a.score);
 
   const suggestions = riskyModules.slice(0, 3).map((moduleValue) => `${moduleValue.moduleName}：${moduleValue.advice}`);
 
-  if (totalRiskLevel === 'critical' || totalRiskLevel === 'high') {
+  if (totalRiskLevel === 'high') {
     suggestions.unshift('建议优先预约专业税务顾问，对高风险事项进行专项诊断。');
   }
 
@@ -272,7 +273,7 @@ function parseReportModules(raw: unknown): ModuleScorePublicDTO[] {
         REPORT_MODULE_LABEL[moduleKey] ??
         String(moduleKey),
       score: (moduleValue.score as number) ?? 0,
-      riskLevel: (moduleValue.risk_level as RiskLevel) ?? 'low',
+      riskLevel: normalizeRiskLevel(moduleValue.risk_level),
       desc: (moduleValue.desc as string) ?? '',
       advice: (moduleValue.advice as string) ?? '',
     };
@@ -287,7 +288,7 @@ function mapAssessmentReport(row: Record<string, unknown>, includeSuggestions: b
     isUnlocked: Boolean(row.viewed),
     isSaved: Boolean(row.is_saved),
     score: row.score as number,
-    riskLevel: row.risk_level as RiskLevel,
+    riskLevel: normalizeRiskLevel(row.risk_level),
     modules: parseReportModules(row.modules),
     completedAt: (row.completed_at as string | undefined) ?? (row.created_at as string),
     ...(includeSuggestions && {
@@ -626,6 +627,9 @@ export async function createAppointment(params: {
   if (typeof params.body.uploadIntent === 'string' && params.body.uploadIntent.trim()) {
     appointmentInsert.upload_intent = params.body.uploadIntent.trim();
   }
+  appointmentInsert.appointment_type = (typeof params.body.appointmentType === 'string' && params.body.appointmentType)
+    ? params.body.appointmentType
+    : 'consult';
   if (typeof params.body.sourceQrId === 'string' && params.body.sourceQrId) {
     appointmentInsert.source_qr_id = params.body.sourceQrId;
   }
@@ -741,7 +745,7 @@ export async function listUserAppointments(userId: string): Promise<AppointmentM
   logAssessmentDb('appointments list start', { userId });
   const { data: rows, error } = await serviceClient
     .from('appointments')
-    .select('id, topic, description, status, scheduled_at, created_at')
+    .select('id, topic, description, status, scheduled_at, created_at, appointment_type, advisor_id, admin_users!advisor_id(display_name)')
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
@@ -757,12 +761,23 @@ export async function listUserAppointments(userId: string): Promise<AppointmentM
 
   return (rows ?? []).map((row) => {
     const description = (row.description as string) ?? '';
+    const advisorJoin = (row as Record<string, unknown>).admin_users as
+      | { display_name: string }[]
+      | { display_name: string }
+      | null;
+    let advisorName: string | null = null;
+    if (Array.isArray(advisorJoin)) {
+      advisorName = advisorJoin[0]?.display_name ?? null;
+    } else if (advisorJoin && typeof advisorJoin === 'object') {
+      advisorName = (advisorJoin as { display_name: string }).display_name ?? null;
+    }
     return {
       id: row.id as string,
+      appointmentType: ((row.appointment_type as string | null) ?? 'consult') as AppointmentMySummaryDTO['appointmentType'],
       topic: row.topic as AppointmentMySummaryDTO['topic'],
       descriptionSummary: description.slice(0, 100),
       status: row.status as AppointmentMySummaryDTO['status'],
-      advisorName: null,
+      advisorName,
       scheduledAt: (row.scheduled_at as string | null) ?? null,
       createdAt: row.created_at as string,
     };
@@ -946,11 +961,7 @@ export async function listLandingMaterials(params: {
     .range(from, to);
 
   if (params.query.category) query = query.eq('type', params.query.category);
-  if (params.query.activityId) {
-    query = query.eq('activity_id', params.query.activityId);
-  } else {
-    query = query.is('activity_id', null);
-  }
+  query = query.is('activity_id', null);
 
   const { data, error, count } = await query;
   if (error) throw new Error(error.message);
@@ -1123,11 +1134,13 @@ export async function getActivityLandingDetail(
     .from('activities')
     .select('id, name, start_at, end_at, place, teacher, speaker_title, description, cover_image, status')
     .eq('id', activityId)
-    .eq('status', 'published')
     .single();
 
   if (error || !activity) return null;
-  const materials = await listActivityLandingMaterials(activityId, userId, isProfileComplete);
+  const activityStatus = activity.status as 'published' | 'draft' | 'closed';
+  const materials = activityStatus === 'published'
+    ? await listActivityLandingMaterials(activityId, userId, isProfileComplete)
+    : [];
   return mapTrackingActivity(activity as Record<string, unknown>, materials);
 }
 
@@ -1154,38 +1167,64 @@ export async function trackQrScan(params: {
 
   if (error || !qrCode) return null;
 
-  await serviceClient.from('qr_scan_events').insert({
-    qr_code_id: params.qrCodeId,
-    user_agent: params.userAgent ?? null,
-    session_id: params.sessionId ?? null,
-  });
+  let shouldIncrementScan = true;
+  if (params.sessionId) {
+    const { data: existingEvent, error: existingEventError } = await serviceClient
+      .from('qr_scan_events')
+      .select('id')
+      .eq('qr_code_id', params.qrCodeId)
+      .eq('session_id', params.sessionId)
+      .maybeSingle();
 
-  const { data: currentQr } = await serviceClient
-    .from('qr_codes')
-    .select('scans')
-    .eq('id', params.qrCodeId)
-    .single();
+    if (existingEventError) throw new Error(existingEventError.message);
+    shouldIncrementScan = !existingEvent;
+  }
 
-  await serviceClient
-    .from('qr_codes')
-    .update({ scans: ((currentQr?.scans as number | null) ?? 0) + 1 })
-    .eq('id', params.qrCodeId);
+  if (shouldIncrementScan) {
+    const { error: scanEventError } = await serviceClient.from('qr_scan_events').insert({
+      qr_code_id: params.qrCodeId,
+      user_id: params.userId ?? null,
+      user_agent: params.userAgent ?? null,
+      session_id: params.sessionId ?? null,
+    });
 
-  if (qrCode.activity_id) {
-    const { data: activityQrCodes } = await serviceClient
+    if (scanEventError) {
+      if (scanEventError.code === '23505' && params.sessionId) {
+        shouldIncrementScan = false;
+      } else {
+        throw new Error(scanEventError.message);
+      }
+    }
+  }
+
+  if (shouldIncrementScan) {
+    const { data: currentQr } = await serviceClient
       .from('qr_codes')
       .select('scans')
-      .eq('activity_id', qrCode.activity_id as string);
-
-    const activityScan = ((activityQrCodes ?? []) as Record<string, unknown>[]).reduce(
-      (total, item) => total + ((item.scans as number | null) ?? 0),
-      0,
-    );
+      .eq('id', params.qrCodeId)
+      .single();
 
     await serviceClient
-      .from('activities')
-      .update({ scan: activityScan })
-      .eq('id', qrCode.activity_id as string);
+      .from('qr_codes')
+      .update({ scans: ((currentQr?.scans as number | null) ?? 0) + 1 })
+      .eq('id', params.qrCodeId);
+
+    if (qrCode.activity_id) {
+      const { data: activityQrCodes } = await serviceClient
+        .from('qr_codes')
+        .select('scans')
+        .eq('activity_id', qrCode.activity_id as string);
+
+      const activityScan = ((activityQrCodes ?? []) as Record<string, unknown>[]).reduce(
+        (total, item) => total + ((item.scans as number | null) ?? 0),
+        0,
+      );
+
+      await serviceClient
+        .from('activities')
+        .update({ scan: activityScan })
+        .eq('id', qrCode.activity_id as string);
+    }
   }
 
   let advisorName: string | null = null;
@@ -1200,7 +1239,8 @@ export async function trackQrScan(params: {
 
   const activityJoin = qrCode.activities as Record<string, unknown>[] | Record<string, unknown> | null;
   const activity = Array.isArray(activityJoin) ? (activityJoin[0] ?? null) : activityJoin;
-  const materials = activity && qrCode.activity_id
+  const activityStatus = activity?.status as 'published' | 'draft' | 'closed' | undefined;
+  const materials = activity && qrCode.activity_id && activityStatus === 'published'
     ? await listActivityLandingMaterials(
         qrCode.activity_id as string,
         params.userId ?? null,

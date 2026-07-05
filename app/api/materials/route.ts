@@ -26,7 +26,6 @@ export async function GET(req: NextRequest) {
     page: parsePositiveInteger(searchParams.get('page'), 1),
     pageSize: parsePositiveInteger(searchParams.get('pageSize'), 20),
     ...(category ? { category: category as MaterialType } : {}),
-    ...(searchParams.get('activityId') ? { activityId: searchParams.get('activityId') ?? undefined } : {}),
   };
 
   try {

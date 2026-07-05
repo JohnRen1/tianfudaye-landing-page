@@ -19,6 +19,7 @@ import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { getQuestions, submitAssessment } from "@/lib/api/assessment";
 import type { QuestionPublicDTO } from "@/lib/contracts/assessment";
+import { buildPathWithTracking } from "@/lib/tracking-context";
 
 export function RiskAssessmentQuizPage() {
   const router = useRouter();
@@ -27,20 +28,8 @@ export function RiskAssessmentQuizPage() {
   const urlQrId = searchParams.get("qr") ?? searchParams.get("qr_id");
   const urlActivityId = searchParams.get("activity") ?? searchParams.get("activity_id");
 
-  // localStorage 兜底：SSR 阶段 window 不存在，必须在 useEffect 里读取
-  const [sourceQrId, setSourceQrId] = useState<string | null>(urlQrId ?? null);
-  const [sourceActivityId, setSourceActivityId] = useState<string | null>(urlActivityId ?? null);
-
-  useEffect(() => {
-    if (!urlQrId) {
-      const stored = localStorage.getItem("qr_id");
-      if (stored) setSourceQrId(stored);
-    }
-    if (!urlActivityId) {
-      const stored = localStorage.getItem("activity_id");
-      if (stored) setSourceActivityId(stored);
-    }
-  }, [urlQrId, urlActivityId]);
+  const [sourceQrId] = useState<string | null>(urlQrId ?? null);
+  const [sourceActivityId] = useState<string | null>(urlActivityId ?? null);
 
   // 题目加载状态
   const [questions, setQuestions] = useState<QuestionPublicDTO[]>([]);
@@ -150,7 +139,7 @@ export function RiskAssessmentQuizPage() {
         selectedIndexes: answers[q.id] ?? [],
       }));
       const result = await submitAssessment(submitAnswers, sourceQrId, sourceActivityId);
-      router.push(`/risk-assessment/report?id=${result.reportId}`);
+      router.push(buildPathWithTracking(`/risk-assessment/report?id=${result.reportId}`, searchParams));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "提交失败，请重试");
       setIsSubmitting(false);
@@ -165,7 +154,7 @@ export function RiskAssessmentQuizPage() {
             variant="ghost"
             size="icon"
             className="h-9 w-9 rounded-full"
-            onClick={() => router.push("/risk-assessment")}
+            onClick={() => router.push(buildPathWithTracking("/risk-assessment", searchParams))}
             aria-label="返回测评起始页"
           >
             <ArrowLeft className="h-5 w-5" />

@@ -24,6 +24,7 @@ import { LoginModal } from "./login-modal";
 import { sendMessageStream } from "@/lib/api/ai-chat";
 import type { AiAnswerBodyDTO, ChatMessageDTO } from "@/lib/contracts/ai-chat";
 import { hydrateClientAuthFromServer, isClientLoggedIn } from "@/lib/client-auth";
+import { buildPathWithTracking } from "@/lib/tracking-context";
 
 const quickQuestions = [
   "发票合规怎么判断？",
@@ -294,28 +295,10 @@ function AiLoadingCard() {
   );
 }
 
-function useActivityId(): string | null {
-  const searchParams = useSearchParams();
-  const fromUrl =
-    searchParams.get("activity_id") ?? searchParams.get("activity");
-
-  const [activityId, setActivityId] = useState<string | null>(fromUrl ?? null);
-
-  useEffect(() => {
-    if (fromUrl) {
-      setActivityId(fromUrl);
-      return;
-    }
-    const stored = localStorage.getItem("activity_id");
-    if (stored) setActivityId(stored);
-  }, [fromUrl]);
-
-  return activityId;
-}
-
 export function TaxAiAssistantPage() {
   const router = useRouter();
-  const activityId = useActivityId();
+  const searchParams = useSearchParams();
+  const activityId = searchParams.get("activity_id") ?? searchParams.get("activity");
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -398,16 +381,18 @@ export function TaxAiAssistantPage() {
     sessionStorage.setItem(CHAT_STATE_STORAGE_KEY, JSON.stringify(storedState));
   };
 
+  const buildTrackedPath = (path: string) => buildPathWithTracking(path, searchParams);
+
   const openAppointment = () => {
     if (!requireLogin()) return;
     persistCurrentChatState();
-    router.push("/appointment");
+    router.push(buildTrackedPath("/appointment"));
   };
 
   const openMaterials = () => {
     if (!requireLogin()) return;
     persistCurrentChatState();
-    router.push("/materials");
+    router.push(buildTrackedPath("/materials"));
   };
 
   const submitQuestion = async (question: string) => {
@@ -479,7 +464,7 @@ export function TaxAiAssistantPage() {
       router.back();
       return;
     }
-    router.push("/");
+    router.push(buildTrackedPath("/"));
   };
 
   return (

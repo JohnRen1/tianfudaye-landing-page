@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
@@ -18,10 +18,13 @@ import { getMyAppointments } from "@/lib/api/appointments";
 import {
   APPOINTMENT_STATUS_LABEL,
   APPOINTMENT_TOPIC_LABEL,
+  APPOINTMENT_TYPE_LABEL,
+  APPOINTMENT_TYPE_TONE,
   type AppointmentMySummaryDTO,
   type AppointmentStatus,
 } from "@/lib/contracts/appointment";
 import { hydrateClientAuthFromServer } from "@/lib/client-auth";
+import { buildPathWithTracking } from "@/lib/tracking-context";
 
 function getStatusTone(status: AppointmentStatus) {
   switch (status) {
@@ -46,6 +49,7 @@ function formatDateTime(value: string | null | undefined) {
 
 export default function AppointmentMyPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<AppointmentMySummaryDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -114,7 +118,7 @@ export default function AppointmentMyPage() {
               <div className="flex min-h-[240px] flex-col items-center justify-center gap-3 text-center">
                 <CalendarCheck className="h-8 w-8 text-primary" />
                 <p className="text-sm text-muted-foreground">当前还没有预约记录，先去提交一次预约吧。</p>
-                <Button className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.push("/appointment")}>
+                <Button className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.push(buildPathWithTracking("/appointment", searchParams))}>
                   去预约顾问
                 </Button>
               </div>
@@ -125,6 +129,11 @@ export default function AppointmentMyPage() {
                     <CardContent className="space-y-3 p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
+                          <div className="mb-1 flex items-center gap-2">
+                            <Badge className={APPOINTMENT_TYPE_TONE[item.appointmentType]}>
+                              {APPOINTMENT_TYPE_LABEL[item.appointmentType]}
+                            </Badge>
+                          </div>
                           <p className="text-sm font-semibold text-foreground">
                             {APPOINTMENT_TOPIC_LABEL[item.topic]}
                           </p>

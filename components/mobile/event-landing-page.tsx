@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { buildPathWithTracking } from "@/lib/tracking-context";
 import { LoginModal } from "./login-modal";
 import { hydrateClientAuthFromServer } from "@/lib/client-auth";
 import { claimMaterial } from "@/lib/api/materials";
@@ -88,15 +89,7 @@ export function EventLandingPage({
 
   const withTrackingParams = (path: string) => {
     if (typeof window === "undefined") return path;
-    const url = new URL(path, window.location.origin);
-    const currentUrl = new URL(window.location.href);
-    const qrId = currentUrl.searchParams.get("qr_id") ?? localStorage.getItem("qr_id");
-    const activityId = currentUrl.searchParams.get("activity_id") ?? eventData?.id ?? localStorage.getItem("activity_id");
-    if (qrId) url.searchParams.set("qr", qrId);
-    if (activityId) url.searchParams.set("activity", activityId);
-    if (qrId) url.searchParams.set("qr_id", qrId);
-    if (activityId) url.searchParams.set("activity_id", activityId);
-    return `${url.pathname}${url.search}`;
+    return buildPathWithTracking(path, new URL(window.location.href).searchParams);
   };
 
   const requireLogin = (action: () => void) => {
@@ -120,7 +113,7 @@ export function EventLandingPage({
       return;
     }
 
-    if (material.claimStatus === "needs_company_info" || material.needCompanyInfo) {
+    if (material.claimStatus === "needs_company_info") {
       goToProfileComplete();
       return;
     }
@@ -281,7 +274,7 @@ export function EventLandingPage({
                     </div>
                   ) : materials.map((material) => {
                     const isDownloaded = downloadedMaterials.includes(material.id) || material.claimStatus === "claimed";
-                    const needsCompanyInfo = material.claimStatus === "needs_company_info" || material.needCompanyInfo;
+                    const needsCompanyInfo = material.claimStatus === "needs_company_info";
                     const Icon = material.format === "Excel" ? ClipboardCheck : FileText;
                     const isClaiming = claimingMaterialId === material.id;
 
@@ -305,6 +298,11 @@ export function EventLandingPage({
                               <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-[10px] text-warning">
                                 <LockKeyhole className="h-3 w-3" />
                                 需要补充企业信息
+                              </span>
+                            ) : material.needCompanyInfo ? (
+                              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[10px] text-success">
+                                <CheckCircle className="h-3 w-3" />
+                                已补充企业信息
                               </span>
                             ) : null}
                           </div>
@@ -483,10 +481,14 @@ export function EventLandingPage({
           ) : (
             <Button
               className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
-              onClick={() => requireLogin(() => router.push(withTrackingParams("/appointment")))}
+              onClick={() => requireLogin(() => {
+                const base = withTrackingParams("/appointment");
+                const sep = base.includes("?") ? "&" : "?";
+                router.push(`${base}${sep}enroll=1`);
+              })}
             >
               <Calendar className="mr-2 h-4 w-4" />
-              立即预约
+              沙龙报名
             </Button>
           )}
         </div>

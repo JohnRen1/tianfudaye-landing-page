@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { getHomepageSurveyActive, submitHomepageSurvey } from "@/lib/api/homepage-survey";
+import { me } from "@/lib/api/auth";
+import { hydrateClientAuthFromServer } from "@/lib/client-auth";
 import type { HomepageSurveyPublicConfigDTO } from "@/lib/contracts/homepage-survey";
 
 type FormState = {
@@ -115,6 +117,24 @@ export function HomepageSurveyPage() {
   useEffect(() => {
     let ignored = false;
     setSyncing(true);
+
+    void hydrateClientAuthFromServer().then(async (loggedIn) => {
+      if (loggedIn && !ignored) {
+        try {
+          const user = await me();
+          setForm((prev) => ({
+            ...prev,
+            name: prev.name || user.name || "",
+            company: prev.company || user.company || "",
+            industry: prev.industry || user.industry || "",
+            contactTime: prev.contactTime || user.size || "",
+          }));
+        } catch {
+          // 静默失败，用户手动填写即可
+        }
+      }
+    });
+
     getHomepageSurveyActive()
       .then((result) => {
         if (ignored) return;
@@ -137,7 +157,7 @@ export function HomepageSurveyPage() {
   const handleSubmit = async () => {
     if (!config) return;
     if (!form.name.trim()) return setMessage("请填写姓名");
-    if (!/^1\d{10}$/.test(form.phone.trim())) return setMessage("请填写正确的 11 位手机号");
+    if (!/^1[3-9]\d{9}$/.test(form.phone.trim())) return setMessage("请填写正确的 11 位手机号");
     if (!form.company.trim()) return setMessage("请填写公司名称");
     if (!form.industry.trim()) return setMessage("请填写所属行业");
     if (!form.topicId) return setMessage("请选择候选课题");

@@ -133,12 +133,10 @@ export interface MaterialLandingItemDTO {
  *
  * 与 admin 的 MaterialQueryDTO 区别：
  *   - 无 status 参数（服务端固定返回 published 资料）
- *   - 有 activityId 参数（活动落地页资料入口，S1 外键筛选）
+ *   - 固定返回通用材料（activity_id is null）；活动绑定资料只在活动落地页主页资料区展示
  *   - 有 category 参数（Tab 切换时前端可传，或一次性拉取所有分类由前端过滤）
  */
 export interface MaterialLandingQueryDTO {
-  /** 按活动 id 筛选（S1：活动落地页场景，event-landing-page.tsx 使用） */
-  activityId?: string;
   /** 按资料分类筛选（可选，materials-page.tsx Tab 切换场景） */
   category?: MaterialType;
   /** 页码，默认 1 */

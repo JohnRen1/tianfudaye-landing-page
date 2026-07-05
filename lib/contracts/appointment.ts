@@ -29,6 +29,31 @@ import type { ApiResponse } from './shared';
 // ===========================================================================
 
 /**
+ * AppointmentType — 预约类型枚举
+ *
+ * 标识本次预约的来源场景，与管理后台保持一致。
+ * 数据库存英文值，展示层使用 APPOINTMENT_TYPE_LABEL 映射中文。
+ */
+export type AppointmentType =
+  | 'consult'   // 预约顾问（完整表单入口）
+  | 'enroll'    // 沙龙报名（活动页报名入口）
+  | 'message';  // 留言咨询（未来扩展）
+
+/** 展示用中文标签映射 */
+export const APPOINTMENT_TYPE_LABEL: Record<AppointmentType, string> = {
+  consult: '预约顾问',
+  enroll: '沙龙报名',
+  message: '留言咨询',
+};
+
+/** 展示用色调映射 */
+export const APPOINTMENT_TYPE_TONE: Record<AppointmentType, string> = {
+  consult: 'bg-primary/10 text-primary',
+  enroll: 'bg-accent/15 text-accent-foreground',
+  message: 'bg-secondary text-secondary-foreground',
+};
+
+/**
  * AppointmentTopic — 预约咨询主题枚举
  *
  * 与管理后台 lib/contracts/lead.ts AppointmentTopic 保持一致。
@@ -131,6 +156,12 @@ export interface AppointmentCreateDTO {
   /** 选填：微信号 */
   wechat?: string;
   /**
+   * 选填：预约类型，标识来源场景。
+   * 前端根据入口自动填入，服务端存入 appointment_type 字段。
+   * 不传时服务端默认记为 'consult'。
+   */
+  appointmentType?: AppointmentType;
+  /**
    * 选填：是否愿意上传资料（自由文本，对应 uploadOptions 常量）。
    * 属于意向信号，写入 Appointment 实体供顾问参考。
    */
@@ -183,6 +214,8 @@ export type AppointmentCreateResponse = ApiResponse<AppointmentCreateResponseDTO
 export interface AppointmentMySummaryDTO {
   /** 预约 UUID */
   id: string;
+  /** 预约类型 */
+  appointmentType: AppointmentType;
   /** 咨询主题枚举 */
   topic: AppointmentTopic;
   /** 问题描述摘要（前 100 字） */

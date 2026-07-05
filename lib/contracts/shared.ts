@@ -58,14 +58,13 @@ export interface PaginatedData<T> {
 // 数据库存英文值，展示层映射中文标签
 // ---------------------------------------------------------------------------
 
-export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
+export type RiskLevel = 'low' | 'medium' | 'high';
 
 /** 展示用中文标签映射，仅前端渲染使用 */
 export const RISK_LEVEL_LABEL: Record<RiskLevel, string> = {
   low: '低风险',
   medium: '中风险',
   high: '高风险',
-  critical: '严重风险',
 };
 
 // ---------------------------------------------------------------------------

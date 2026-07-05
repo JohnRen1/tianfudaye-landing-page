@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Building2, CalendarCheck, CheckCircle2, Clock, FileUp, MessageCircle, MessageSquare, Phone, Send, User } from "lucide-react";
+import { ArrowLeft, Building2, CalendarCheck, CheckCircle2, Clock, MessageCircle, MessageSquare, Phone, Send, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,14 +11,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { submitAppointment } from "@/lib/api/appointments";
+import { me } from "@/lib/api/auth";
 import { APPOINTMENT_TOPIC_LABEL, type AppointmentTopic } from "@/lib/contracts/appointment";
 import { ApiError } from "@/lib/api/client";
+import { buildPathWithTracking } from "@/lib/tracking-context";
+
 
 const consultTopics = ["税务风险排查", "发票合规", "公转私风险", "企业所得税筹划", "个税社保合规", "税务稽查应对", "公司架构设计", "其他问题"];
-const enrollPurposes = ["学习税务合规知识", "了解最新政策动态", "解决企业实际税务问题", "与同行交流经验", "了解专业税务服务", "其他目的"];
-const industries = ["制造业", "批发零售", "互联网/科技服务", "建筑工程", "餐饮服务", "贸易进出口", "专业服务", "其他行业"];
+const enrollPurposes = ["学习税务合规知识", "了解最新政策动态", "解决企业实际税务问题", "与同行交流经验", "了解专业税务服务", "其他"];
+const industries = ["制造业", "批发零售", "互联网/科技服务", "建筑工程", "餐饮服务", "贸易进出口", "专业服务", "其他"];
 const contactTimes = ["工作日上午", "工作日下午", "工作日晚上", "周末", "均可"];
-const uploadOptions = ["愿意，后续顾问联系后上传", "暂不上传", "视情况而定"];
 
 // 中文标签 → AppointmentTopic 枚举值的反向映射
 const TOPIC_LABEL_TO_ENUM = Object.fromEntries(
@@ -29,12 +31,13 @@ type FormState = {
   name: string;
   phone: string;
   topic: string;
+  topicOther: string;
   description: string;
   company: string;
   industry: string;
+  industryOther: string;
   contactTime: string;
   wechat: string;
-  uploadIntent: string;
 };
 
 type ErrorState = Partial<Record<keyof FormState, string>>;
@@ -43,12 +46,13 @@ const initialForm: FormState = {
   name: "",
   phone: "",
   topic: "",
+  topicOther: "",
   description: "",
   company: "",
   industry: "",
+  industryOther: "",
   contactTime: "",
   wechat: "",
-  uploadIntent: "",
 };
 
 function FieldError({ message }: { message?: string }) {
@@ -61,32 +65,43 @@ function AppointmentForm() {
   const searchParams = useSearchParams();
   const sourceLeadId = searchParams.get("leadId") ?? undefined;
   const activityName = searchParams.get("activity_name") ?? undefined;
+  const prefillTopic = searchParams.get("topic") ?? "";
+  const prefillDescription = searchParams.get("description") ?? "";
 
   const urlQrId = searchParams.get("qr") ?? searchParams.get("qr_id");
   const urlActivityId = searchParams.get("activity") ?? searchParams.get("activity_id");
 
-  const [sourceQrId, setSourceQrId] = useState<string | undefined>(urlQrId ?? undefined);
-  const [sourceActivityId, setSourceActivityId] = useState<string | undefined>(urlActivityId ?? undefined);
+  const [sourceQrId] = useState<string | undefined>(urlQrId ?? undefined);
+  const [sourceActivityId] = useState<string | undefined>(urlActivityId ?? undefined);
 
-  useEffect(() => {
-    if (!urlQrId) {
-      const stored = localStorage.getItem("qr_id");
-      if (stored) setSourceQrId(stored);
-    }
-    if (!urlActivityId) {
-      const stored = localStorage.getItem("activity_id");
-      if (stored) setSourceActivityId(stored);
-    }
-  }, [urlQrId, urlActivityId]);
-
-  // 活动报名模式：从活动落地页跳转时带有 activity_id
-  const isEnrollMode = Boolean(sourceActivityId);
+  // 活动报名模式：只有明确传 enroll=1 才启用（活动页"报名参加"按钮传此参数）
+  // 从活动页"立即预约"跳过来时不传 enroll，默认显示完整预约顾问表单
+  const isEnrollMode = searchParams.get("enroll") === "1";
 
   const [form, setForm] = useState<FormState>(initialForm);
   const [errors, setErrors] = useState<ErrorState>({});
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+
+  useEffect(() => {
+    me().then((user) => {
+      setForm((prev) => ({
+        ...prev,
+        topic: prev.topic || prefillTopic || "",
+        description: prev.description || prefillDescription || "",
+        company: prev.company || user.company || "",
+        industry: prev.industry || user.industry || "",
+        contactTime: prev.contactTime || user.size || "",
+      }));
+    }).catch(() => {
+      setForm((prev) => ({
+        ...prev,
+        topic: prev.topic || prefillTopic || "",
+        description: prev.description || prefillDescription || "",
+      }));
+    });
+  }, [prefillDescription, prefillTopic]);
 
   const updateField = (field: keyof FormState, value: string) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -98,11 +113,12 @@ function AppointmentForm() {
     const nextErrors: ErrorState = {};
     if (!form.name.trim()) nextErrors.name = "请填写姓名";
     if (!form.phone.trim()) nextErrors.phone = "请填写手机号";
-    else if (!/^1\d{10}$/.test(form.phone)) nextErrors.phone = "请输入 11 位有效手机号";
+    else if (!/^1[3-9]\d{9}$/.test(form.phone)) nextErrors.phone = "手机号格式不正确，请输入 11 位手机号";
     if (!isEnrollMode && !form.topic) nextErrors.topic = "请选择咨询主题";
     if (!isEnrollMode && !form.description.trim()) nextErrors.description = "请填写问题描述";
     if (!form.company.trim()) nextErrors.company = "请填写企业名称";
     if (!form.industry) nextErrors.industry = "请选择所属行业";
+    if (form.industry === "其他" && !form.industryOther.trim()) nextErrors.industryOther = "请填写所属行业";
     if (!form.contactTime) nextErrors.contactTime = "请选择方便联系时间";
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -112,11 +128,15 @@ function AppointmentForm() {
     if (!validate()) return;
 
     // topic 字段：中文标签 → AppointmentTopic 枚举值
-    const topicEnum = form.topic ? TOPIC_LABEL_TO_ENUM[form.topic] : undefined;
+    // 报名模式下 topic 是自由文本目的，映射不到枚举时用 'other'
+    const topicEnum = form.topic ? (TOPIC_LABEL_TO_ENUM[form.topic] ?? (isEnrollMode ? "other" as AppointmentTopic : undefined)) : undefined;
     if (!isEnrollMode && !topicEnum) {
       setApiError("咨询主题无效，请重新选择");
       return;
     }
+
+    // 行业：选"其他"时用用户输入值
+    const industryValue = form.industry === "其他" ? form.industryOther.trim() : form.industry;
 
     setSubmitting(true);
     setApiError(null);
@@ -126,12 +146,12 @@ function AppointmentForm() {
         name: form.name.trim(),
         phone: form.phone,
         ...(topicEnum && { topic: topicEnum }),
-        description: form.description.trim() || (isEnrollMode ? `报名参加活动${activityName ? `：${activityName}` : ""}` : ""),
+        description: form.description.trim() || (isEnrollMode ? `报名参加活动${activityName ? `：${activityName}` : ""}${form.topic ? `，目的：${form.topic}` : ""}` : ""),
         company: form.company.trim(),
-        industry: form.industry,
+        industry: industryValue,
         contactTime: form.contactTime,
+        appointmentType: isEnrollMode ? "enroll" : "consult",
         ...(form.wechat.trim() && { wechat: form.wechat.trim() }),
-        ...(!isEnrollMode && form.uploadIntent && { uploadIntent: form.uploadIntent }),
         ...(sourceLeadId && { sourceLeadId }),
         ...(sourceQrId && { sourceQrId }),
         ...(sourceActivityId && { sourceActivityId }),
@@ -152,6 +172,9 @@ function AppointmentForm() {
     }
   };
 
+  const activityLandingPath = buildPathWithTracking("/", searchParams);
+  const taxAiPath = buildPathWithTracking("/tax-ai", searchParams);
+
   if (submitted) {
     return (
       <div className="mx-auto min-h-screen max-w-[390px] bg-background px-4 py-8">
@@ -165,9 +188,9 @@ function AppointmentForm() {
               {isEnrollMode ? "报名已提交，顾问将在 1 个工作日内与您确认参会详情。" : "预约提交成功，顾问将在 1 个工作日内联系您。"}
             </p>
             <div className="mt-6 w-full space-y-3">
-              <Button className="h-12 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.push("/")}>返回首页</Button>
+              <Button className="h-12 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.push(isEnrollMode ? activityLandingPath : activityLandingPath)}>{isEnrollMode ? "返回活动页" : "返回首页"}</Button>
               <Button variant="outline" className="h-12 w-full rounded-xl" onClick={() => router.push("/appointment/my")}>查看我的预约</Button>
-              <Button variant="outline" className="h-12 w-full rounded-xl border-primary/20 text-primary" onClick={() => router.push("/tax-ai")}>继续问 AI</Button>
+              <Button variant="outline" className="h-12 w-full rounded-xl border-primary/20 text-primary" onClick={() => router.push(taxAiPath)}>继续问 AI</Button>
             </div>
           </CardContent>
         </Card>
@@ -232,7 +255,10 @@ function AppointmentForm() {
                 {!isEnrollMode && <span className="text-destructive">*</span>}
                 {isEnrollMode && <span className="text-muted-foreground">选填</span>}
               </Label>
-              <Select value={form.topic} onValueChange={(value) => updateField("topic", value)}>
+              <Select value={form.topic} onValueChange={(value) => {
+                updateField("topic", value);
+                if (value !== "其他") updateField("topicOther", "");
+              }}>
                 <SelectTrigger className={cn("h-12 w-full rounded-xl", errors.topic && "border-destructive")}>
                   <SelectValue placeholder={isEnrollMode ? "请选择参加目的" : "请选择咨询主题"} />
                 </SelectTrigger>
@@ -242,6 +268,14 @@ function AppointmentForm() {
                   ))}
                 </SelectContent>
               </Select>
+              {isEnrollMode && form.topic === "其他" && (
+                <Input
+                  className="mt-2 h-12 rounded-xl"
+                  placeholder="请输入参加目的"
+                  value={form.topicOther}
+                  onChange={(event) => updateField("topicOther", event.target.value)}
+                />
+              )}
               <FieldError message={errors.topic} />
             </div>
 
@@ -274,11 +308,23 @@ function AppointmentForm() {
 
             <div>
               <Label className="mb-2 flex items-center gap-1 text-sm font-medium">所属行业 <span className="text-destructive">*</span></Label>
-              <Select value={form.industry} onValueChange={(value) => updateField("industry", value)}>
+              <Select value={form.industry} onValueChange={(value) => {
+                updateField("industry", value);
+                if (value !== "其他") updateField("industryOther", "");
+              }}>
                 <SelectTrigger className={cn("h-12 w-full rounded-xl", errors.industry && "border-destructive")}><SelectValue placeholder="请选择所属行业" /></SelectTrigger>
                 <SelectContent>{industries.map((industry) => <SelectItem key={industry} value={industry}>{industry}</SelectItem>)}</SelectContent>
               </Select>
+              {form.industry === "其他" && (
+                <Input
+                  className={cn("mt-2 h-12 rounded-xl", errors.industryOther && "border-destructive")}
+                  placeholder="请输入所属行业"
+                  value={form.industryOther}
+                  onChange={(event) => updateField("industryOther", event.target.value)}
+                />
+              )}
               <FieldError message={errors.industry} />
+              <FieldError message={errors.industryOther} />
             </div>
 
             <div>
@@ -298,22 +344,6 @@ function AppointmentForm() {
               </div>
             </div>
 
-            {!isEnrollMode && (
-              <>
-                <div>
-                  <Label className="mb-2 text-sm font-medium">是否愿意上传资料 <span className="text-muted-foreground">选填</span></Label>
-                  <Select value={form.uploadIntent} onValueChange={(value) => updateField("uploadIntent", value)}>
-                    <SelectTrigger className="h-12 w-full rounded-xl"><SelectValue placeholder="请选择是否愿意上传资料" /></SelectTrigger>
-                    <SelectContent>{uploadOptions.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex items-start gap-2 rounded-2xl bg-secondary/70 p-3 text-xs leading-relaxed text-muted-foreground">
-                  <FileUp className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <span>如选择愿意上传资料，顾问联系后会告知安全上传方式。</span>
-                </div>
-              </>
-            )}
           </CardContent>
         </Card>
 

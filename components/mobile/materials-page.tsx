@@ -22,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { claimMaterial, getMaterials } from "@/lib/api/materials";
 import { hydrateClientAuthFromServer, isClientLoggedIn } from "@/lib/client-auth";
+import { buildPathWithTracking } from "@/lib/tracking-context";
 import { LoginModal } from "./login-modal";
 import {
   FILE_FORMAT_LABEL,
@@ -65,14 +66,7 @@ export function MaterialsPage() {
   const searchParams = useSearchParams();
 
   const urlActivityId = searchParams.get("activity") ?? searchParams.get("activity_id");
-  const [activityId, setActivityId] = useState<string | null>(urlActivityId ?? null);
-
-  useEffect(() => {
-    if (!urlActivityId) {
-      const stored = localStorage.getItem("activity_id");
-      if (stored) setActivityId(stored);
-    }
-  }, [urlActivityId]);
+  const [activityId] = useState<string | null>(urlActivityId ?? null);
   const [activeCategory, setActiveCategory] = useState<MaterialType>("courseware");
   const [materials, setMaterials] = useState<MaterialLandingItemDTO[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,7 +86,7 @@ export function MaterialsPage() {
     setLoading(true);
     setErrorMessage(null);
     try {
-      const result = await getMaterials({ page: 1, pageSize: 50, ...(activityId ? { activityId } : {}) });
+      const result = await getMaterials({ page: 1, pageSize: 50 });
       setMaterials(result.items);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "资料加载失败");
@@ -105,6 +99,7 @@ export function MaterialsPage() {
     void hydrateClientAuthFromServer().then(() => {
       void loadMaterials();
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activityId]);
 
   const goToProfileComplete = () => {
@@ -162,7 +157,7 @@ export function MaterialsPage() {
       router.back();
       return;
     }
-    router.push("/");
+    router.push(buildPathWithTracking("/", searchParams));
   };
 
   return (
@@ -313,17 +308,21 @@ export function MaterialsPage() {
                         <span
                           className={cn(
                             "flex items-center gap-1 rounded-full px-2 py-1",
-                            material.needCompanyInfo
+                            material.needCompanyInfo && material.claimStatus !== "claimed"
                               ? "bg-warning/10 text-warning"
                               : "bg-success/10 text-success"
                           )}
                         >
-                          {material.needCompanyInfo ? (
+                          {material.needCompanyInfo && material.claimStatus !== "claimed" ? (
                             <LockKeyhole className="h-3.5 w-3.5" />
                           ) : (
                             <CheckCircle className="h-3.5 w-3.5" />
                           )}
-                          {material.needCompanyInfo ? "需要补充企业信息" : "无需补充信息"}
+                          {material.needCompanyInfo && material.claimStatus !== "claimed"
+                            ? "需要补充企业信息"
+                            : material.needCompanyInfo
+                            ? "已补充企业信息"
+                            : "无需补充信息"}
                         </span>
                       </div>
 

@@ -61,6 +61,8 @@ export async function POST(req: NextRequest) {
     company,
     industry,
     contactTime,
+    wechat,
+    appointmentType,
     sourceQrId,
     sourceActivityId,
     sourceLeadId,
@@ -78,8 +80,14 @@ export async function POST(req: NextRequest) {
     sourceLeadId,
   });
 
-  // 验证 topic
-  if (typeof topic !== 'string' || !VALID_TOPICS.has(topic)) {
+  // 留言咨询类型（message）不校验 topic，其余类型必须有合法 topic
+  const resolvedAppointmentType =
+    typeof appointmentType === 'string' && ['consult', 'enroll', 'message'].includes(appointmentType)
+      ? appointmentType
+      : 'consult';
+  const isMessageType = resolvedAppointmentType === 'message';
+
+  if (!isMessageType && (typeof topic !== 'string' || !VALID_TOPICS.has(topic))) {
     logAppointmentApi('invalid topic', { topic });
     return fail(
       APPOINTMENT_ERROR_CODES.APPOINTMENT_TOPIC_INVALID,
@@ -109,27 +117,28 @@ export async function POST(req: NextRequest) {
   const snapshotName = submittedName || normalizeString(userRow.name) || normalizeString(user.name);
   const snapshotPhone = submittedPhone || normalizeString(userRow.phone) || normalizeString(user.phone);
 
-  if (!snapshotName) {
+  if (!snapshotName && !isMessageType) {
     logAppointmentApi('invalid name', { submittedName, userName: userRow.name });
     return fail('APPOINTMENT_NAME_REQUIRED', '姓名不能为空', 400);
   }
 
-  if (!/^1\d{10}$/.test(snapshotPhone)) {
+  // message 类型：手机号从用户账号取，校验失败不阻断（客服可人工确认）
+  if (!isMessageType && !/^1[3-9]\d{9}$/.test(snapshotPhone)) {
     logAppointmentApi('invalid phone', { submittedPhone, userPhone: userRow.phone });
-    return fail(APPOINTMENT_ERROR_CODES.APPOINTMENT_PHONE_INVALID, '手机号格式不正确', 400);
+    return fail(APPOINTMENT_ERROR_CODES.APPOINTMENT_PHONE_INVALID, '手机号格式不正确（需为 11 位手机号）', 400);
   }
 
-  if (!submittedCompany) {
+  if (!isMessageType && !submittedCompany) {
     logAppointmentApi('invalid company', { company });
     return fail('APPOINTMENT_COMPANY_REQUIRED', '企业名称不能为空', 400);
   }
 
-  if (!submittedIndustry) {
+  if (!isMessageType && !submittedIndustry) {
     logAppointmentApi('invalid industry', { industry });
     return fail('APPOINTMENT_INDUSTRY_REQUIRED', '所属行业不能为空', 400);
   }
 
-  if (!submittedContactTime) {
+  if (!isMessageType && !submittedContactTime) {
     logAppointmentApi('invalid contact time', { contactTime });
     return fail('APPOINTMENT_CONTACT_TIME_REQUIRED', '方便联系时间不能为空', 400);
   }
@@ -138,11 +147,13 @@ export async function POST(req: NextRequest) {
     const appointmentBody: AppointmentCreateDTO & Record<string, unknown> = {
       name: snapshotName,
       phone: snapshotPhone,
-      topic,
+      topic: (typeof topic === 'string' && VALID_TOPICS.has(topic)) ? topic : 'other',
       description,
-      company: submittedCompany,
-      industry: submittedIndustry,
-      contactTime: submittedContactTime,
+      company: submittedCompany || undefined,
+      industry: submittedIndustry || undefined,
+      contactTime: submittedContactTime || undefined,
+      appointmentType: resolvedAppointmentType,
+      ...(typeof wechat === 'string' && wechat.trim() ? { wechat: wechat.trim() } : {}),
       sourceQrId,
       sourceActivityId,
       sourceLeadId,

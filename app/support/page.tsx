@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowLeft, Bot, CalendarCheck, CheckCircle2, ChevronDown, Clock, Headphones, MessageCircle, Phone, Send, ShieldCheck } from "lucide-react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { ArrowLeft, AlertCircle, Bot, CalendarCheck, CheckCircle2, ChevronDown, Clock, Headphones, MessageCircle, Phone, Send, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { submitAppointment } from "@/lib/api/appointments";
+import { buildPathWithTracking } from "@/lib/tracking-context";
 
 const faqs = [
   {
@@ -38,14 +40,51 @@ const faqs = [
 
 export default function Page() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [messagePhone, setMessagePhone] = useState("");
+  const [messageContent, setMessageContent] = useState("");
   const [openFaq, setOpenFaq] = useState<string | null>(faqs[0]?.question ?? null);
+
+  const isMessagePhoneValid = messagePhone === "" || /^1[3-9]\d{9}$/.test(messagePhone);
+
+  const handleSubmitMessage = async () => {
+    if (!messageContent.trim()) {
+      setSubmitError("请填写问题描述");
+      return;
+    }
+    if (messagePhone && !/^1[3-9]\d{9}$/.test(messagePhone)) {
+      setSubmitError("手机号格式不正确，请输入 11 位手机号");
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await submitAppointment({
+        name: "",
+        phone: messagePhone.trim() || "",
+        topic: "other",
+        description: messageContent.trim(),
+        company: "",
+        industry: "",
+        contactTime: "",
+        appointmentType: "message",
+      });
+      setSubmitted(true);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "提交失败，请稍后重试");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="mx-auto min-h-screen max-w-[390px] bg-background pb-8">
       <div className="relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
         <div className="absolute -right-16 top-8 h-36 w-36 rounded-full bg-white/10" />
-        <Button variant="ghost" size="icon" className="mb-6 rounded-full text-white hover:bg-white/10 hover:text-white" onClick={() => router.push("/")} aria-label="返回首页">
+        <Button variant="ghost" size="icon" className="mb-6 rounded-full text-white hover:bg-white/10 hover:text-white" onClick={() => router.push(buildPathWithTracking("/", searchParams))} aria-label="返回首页">
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex items-center gap-3">
@@ -108,7 +147,7 @@ export default function Page() {
                       <Button
                         variant="outline"
                         className="mt-3 h-9 rounded-xl border-primary/20 px-3 text-primary"
-                        onClick={() => router.push(faq.href)}
+                        onClick={() => router.push(buildPathWithTracking(faq.href, searchParams))}
                       >
                         {faq.action}
                       </Button>
@@ -134,10 +173,33 @@ export default function Page() {
               </div>
             ) : (
               <>
-                <Input className="h-12 rounded-xl" placeholder="手机号，方便客服联系" type="tel" />
-                <Textarea className="min-h-24 rounded-xl" placeholder="请描述您遇到的问题，例如无法领取资料、报告解读、预约顾问等" />
-                <Button className="h-11 w-full rounded-xl bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => setSubmitted(true)}>
-                  <Send className="mr-2 h-4 w-4" />提交留言
+                <Input
+                  className={`h-12 rounded-xl${!isMessagePhoneValid ? " border-destructive" : ""}`}
+                  placeholder="手机号，方便客服联系（选填）"
+                  type="tel"
+                  inputMode="numeric"
+                  value={messagePhone}
+                  onChange={(e) => setMessagePhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
+                />
+                <Textarea
+                  className="min-h-24 rounded-xl"
+                  placeholder="请描述您遇到的问题，例如无法领取资料、报告解读、预约顾问等"
+                  value={messageContent}
+                  onChange={(e) => setMessageContent(e.target.value)}
+                />
+                {submitError && (
+                  <div className="flex items-center gap-2 rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    {submitError}
+                  </div>
+                )}
+                <Button
+                  className="h-11 w-full rounded-xl bg-accent text-accent-foreground hover:bg-accent/90"
+                  disabled={submitting || !messageContent.trim()}
+                  onClick={() => void handleSubmitMessage()}
+                >
+                  <Send className="mr-2 h-4 w-4" />
+                  {submitting ? "提交中…" : "提交留言"}
                 </Button>
               </>
             )}
@@ -145,10 +207,10 @@ export default function Page() {
         </Card>
 
         <div className="grid grid-cols-2 gap-3">
-          <Button variant="outline" className="h-12 rounded-xl" onClick={() => router.push("/tax-ai")}>
+          <Button variant="outline" className="h-12 rounded-xl" onClick={() => router.push(buildPathWithTracking("/tax-ai", searchParams))}>
             <Bot className="mr-2 h-4 w-4" />继续问 AI
           </Button>
-          <Button className="h-12 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.push("/appointment")}>
+          <Button className="h-12 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.push(buildPathWithTracking("/appointment", searchParams))}>
             <CalendarCheck className="mr-2 h-4 w-4" />预约顾问
           </Button>
         </div>

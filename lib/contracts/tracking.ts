@@ -124,7 +124,7 @@ export interface TrackingContext {
  *
  * 调用时机：落地页加载时，若 URL 含 qr_id 参数则立即触发。
  * 认证：无需认证（匿名公开接口）。
- * 副作用：后端原子递增 qr_codes.scans；写入 qr_scan_events 日志。
+ * 副作用：首次扫码会话写入 qr_scan_events 日志并递增 qr_codes.scans；重复会话只返回活动数据，不重复计数。
  */
 export interface QrScanTrackRequestDTO {
   /**
@@ -132,6 +132,8 @@ export interface QrScanTrackRequestDTO {
    * S2 核心：唯一允许的二维码查询键，不接受 inviteCode。
    */
   qrId: string;
+  /** 同一浏览器/设备针对同一二维码生成的稳定会话 id，用于扫码去重。 */
+  sessionId?: string;
   /** 用户代理字符串，用于设备类型统计。可选。 */
   userAgent?: string;
 }

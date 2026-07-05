@@ -26,6 +26,7 @@ import { RISK_LEVEL_LABEL } from "@/lib/contracts/shared";
 import type { AssessmentReportPublicDTO } from "@/lib/contracts/assessment";
 import type { RiskLevel } from "@/lib/contracts/shared";
 import { getClientAuthToken, hydrateClientAuthFromServer } from "@/lib/client-auth";
+import { buildPathWithTracking } from "@/lib/tracking-context";
 
 // ---------------------------------------------------------------------------
 // Style helpers
@@ -54,14 +55,41 @@ function getRiskStyle(level: RiskLevel) {
         border: "border-orange-200",
         ring: "#ea580c",
       };
-    case "critical":
-      return {
-        text: "text-destructive",
-        bg: "bg-destructive/10",
-        border: "border-destructive/20",
-        ring: "#dc2626",
-      };
   }
+}
+
+function getOrderedModules(modules: AssessmentReportPublicDTO["modules"]) {
+  const riskWeight: Record<RiskLevel, number> = { high: 3, medium: 2, low: 1 };
+  return [...modules].sort((a, b) => {
+    const riskDiff = riskWeight[b.riskLevel] - riskWeight[a.riskLevel];
+    if (riskDiff !== 0) return riskDiff;
+    return b.score - a.score;
+  });
+}
+
+function buildModuleSuggestion(moduleItem: AssessmentReportPublicDTO["modules"][number]) {
+  return `${moduleItem.moduleName}：${moduleItem.advice}`;
+}
+
+function buildAppointmentDescription(report: AssessmentReportPublicDTO) {
+  const orderedModules = getOrderedModules(report.modules);
+  const moduleLines = orderedModules.map((moduleItem, index) => (
+    `${index + 1}. ${moduleItem.moduleName}（${RISK_LEVEL_LABEL[moduleItem.riskLevel]}，${moduleItem.score}分）：${moduleItem.desc} 初步建议：${moduleItem.advice}`
+  ));
+
+  return [
+    `我已完成企业财税风险体检，综合风险分数 ${report.score} 分，风险等级为${RISK_LEVEL_LABEL[report.riskLevel]}。`,
+    "希望顾问结合以下风险模块进行解读并给出整改优先级：",
+    ...moduleLines,
+  ].join("\n");
+}
+
+function buildAppointmentPathWithReport(path: string, report: AssessmentReportPublicDTO) {
+  const url = new URL(path, "https://local.invalid");
+  url.searchParams.set("topic", "税务风险排查");
+  url.searchParams.set("description", buildAppointmentDescription(report));
+  url.searchParams.set("report_id", report.id);
+  return `${url.pathname}${url.search}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -72,6 +100,8 @@ function RiskReportContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const reportId = searchParams.get("id") ?? "";
+  const appointmentBasePath = buildPathWithTracking("/appointment", searchParams);
+  const landingPath = buildPathWithTracking("/", searchParams);
 
   // Remote state
   const [report, setReport] = useState<AssessmentReportPublicDTO | null>(null);
@@ -222,13 +252,16 @@ function RiskReportContent() {
   // -------------------------------------------------------------------------
   // Derived display values
   // -------------------------------------------------------------------------
-  const { score, riskLevel, modules, isUnlocked, isSaved, suggestions } =
+  const { score, riskLevel, modules, isUnlocked, isSaved } =
     report;
   const style = getRiskStyle(riskLevel);
   const levelLabel = RISK_LEVEL_LABEL[riskLevel];
   const circumference = 2 * Math.PI * 48;
   const offset = circumference - (score / 100) * circumference;
-  const highRisk = riskLevel === "high" || riskLevel === "critical";
+  const highRisk = riskLevel === "high";
+  const orderedModules = getOrderedModules(modules);
+  const moduleSuggestions = orderedModules.map(buildModuleSuggestion);
+  const appointmentPath = buildAppointmentPathWithReport(appointmentBasePath, report);
 
   // -------------------------------------------------------------------------
   // Render
@@ -244,7 +277,7 @@ function RiskReportContent() {
           variant="ghost"
           size="icon"
           className="mb-5 rounded-full text-white hover:bg-white/10 hover:text-white"
-          onClick={() => router.push("/")}
+          onClick={() => router.push(landingPath)}
           aria-label="返回落地页主页"
         >
           <ArrowLeft className="h-5 w-5" />
@@ -326,7 +359,7 @@ function RiskReportContent() {
             {highRisk && (
               <Button
                 className="mt-4 h-11 w-full rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                onClick={() => router.push("/appointment")}
+                onClick={() => router.push(appointmentPath)}
               >
                 <CalendarCheck className="mr-2 h-4 w-4" />
                 预约顾问解读
@@ -341,12 +374,12 @@ function RiskReportContent() {
             <div className="mb-4 flex items-center justify-between">
               <h2 className="font-semibold text-foreground">主要风险模块</h2>
               <Badge variant="outline" className="border-primary/20 text-primary">
-                {modules.length} 项重点
+                {orderedModules.length} 项重点
               </Badge>
             </div>
 
             <div className="space-y-3">
-              {modules.map((item) => {
+              {orderedModules.map((item) => {
                 const itemStyle = getRiskStyle(item.riskLevel);
                 const itemLabel = RISK_LEVEL_LABEL[item.riskLevel];
                 return (
@@ -383,15 +416,18 @@ function RiskReportContent() {
         </Card>
 
         {/* Suggestions (visible only when unlocked) */}
-        {isUnlocked && suggestions && suggestions.length > 0 && (
+        {isUnlocked && moduleSuggestions.length > 0 && (
           <Card id="full-report-suggestions" className="scroll-mt-24 border-success/20 bg-success/5 shadow-sm">
             <CardContent className="p-4">
               <div className="mb-3 flex items-center gap-2">
                 <CheckCircle2 className="h-5 w-5 text-success" />
                 <h2 className="font-semibold text-foreground">完整整改建议</h2>
               </div>
+              <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
+                以下建议与上方主要风险模块一一对应，便于按模块逐项整改。
+              </p>
               <ul className="space-y-2">
-                {suggestions.map((s, i) => (
+                {moduleSuggestions.map((suggestion, i) => (
                   <li
                     key={i}
                     className="flex items-start gap-2 text-sm leading-relaxed text-foreground"
@@ -399,7 +435,7 @@ function RiskReportContent() {
                     <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-success/15 text-xs font-bold text-success">
                       {i + 1}
                     </span>
-                    {s}
+                    {suggestion}
                   </li>
                 ))}
               </ul>
@@ -472,7 +508,7 @@ function RiskReportContent() {
 
             <Button
               className="h-11 w-full rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => router.push("/appointment")}
+              onClick={() => router.push(appointmentPath)}
             >
               <CalendarCheck className="mr-2 h-4 w-4" />
               预约顾问解读
@@ -505,7 +541,7 @@ function RiskReportContent() {
 
           <Button
             className="h-12 flex-1 rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            onClick={() => router.push("/appointment")}
+            onClick={() => router.push(appointmentPath)}
           >
             <ShieldAlert className="mr-2 h-4 w-4" />
             顾问解读

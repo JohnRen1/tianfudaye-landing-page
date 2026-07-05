@@ -14,7 +14,7 @@
  *   落地页 AI 回答中"需结合实际确认"状态不再使用独立枚举值 "uncertain"，
  *   而是通过 riskLevel="medium" + needsConfirmation=true 表达。
  *   展示层：needsConfirmation=true 时显示黄色"建议结合实际确认"提示块。
- *   RiskLevel 枚举保持 low/medium/high/critical 四值（复用 shared.ts）。
+ *   RiskLevel 枚举保持 low/medium/high 三值（复用 shared.ts）。
  *
  * 注意：此文件不定义后台管理侧的列表/详情/统计 DTO，那些定义在
  *       管理后台 lib/contracts/qa-record.ts 中。

@@ -28,8 +28,8 @@ export async function POST(req: NextRequest) {
     return fail(HOMEPAGE_SURVEY_ERROR_CODES.HOMEPAGE_SURVEY_TOPIC_REQUIRED, '请选择至少一个沙龙课题', 400);
   }
   if (!normalize(body.name)) return fail(HOMEPAGE_SURVEY_ERROR_CODES.HOMEPAGE_SURVEY_NAME_REQUIRED, '姓名不能为空', 400);
-  if (!/^1\d{10}$/.test(normalize(body.phone))) {
-    return fail(HOMEPAGE_SURVEY_ERROR_CODES.HOMEPAGE_SURVEY_PHONE_INVALID, '手机号格式不正确', 400);
+  if (!/^1[3-9]\d{9}$/.test(normalize(body.phone))) {
+    return fail(HOMEPAGE_SURVEY_ERROR_CODES.HOMEPAGE_SURVEY_PHONE_INVALID, '手机号格式不正确（需为 11 位手机号）', 400);
   }
   if (!normalize(body.company)) return fail(HOMEPAGE_SURVEY_ERROR_CODES.HOMEPAGE_SURVEY_COMPANY_REQUIRED, '公司名称不能为空', 400);
   if (!normalize(body.industry)) return fail(HOMEPAGE_SURVEY_ERROR_CODES.HOMEPAGE_SURVEY_INDUSTRY_REQUIRED, '所属行业不能为空', 400);

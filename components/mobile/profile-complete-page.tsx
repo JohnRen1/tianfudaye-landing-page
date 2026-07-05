@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Building2, BriefcaseBusiness, CheckCircle2, ChevronDown, Clock, MessageCircle } from "lucide-react";
+import { ArrowLeft, AlertCircle, Building2, BriefcaseBusiness, CheckCircle2, ChevronDown, Clock, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,10 +24,11 @@ const INDUSTRY_OPTIONS = [
 ];
 
 const CONTACT_TIME_OPTIONS = [
-  "工作日 09:00 - 12:00",
-  "工作日 14:00 - 18:00",
-  "工作日 18:00 - 20:00",
-  "周末方便联系",
+  "工作日上午",
+  "工作日下午",
+  "工作日晚上",
+  "周末",
+  "均可",
 ];
 
 function getSafeRedirect(value: string | null): string {
@@ -41,11 +42,13 @@ export function ProfileCompletePage() {
   const redirectPath = useMemo(() => getSafeRedirect(searchParams.get("redirect")), [searchParams]);
   const [company, setCompany] = useState("");
   const [industry, setIndustry] = useState("");
+  const [industryOther, setIndustryOther] = useState("");
   const [contactTime, setContactTime] = useState("");
   const [wechat, setWechat] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [successToast, setSuccessToast] = useState(false);
 
   useEffect(() => {
     void hydrateClientAuthFromServer().then(async (loggedIn) => {
@@ -58,7 +61,13 @@ export function ProfileCompletePage() {
       try {
         const user = await me();
         setCompany(user.company ?? "");
-        setIndustry(user.industry ?? "");
+        const savedIndustry = user.industry ?? "";
+        if (savedIndustry && !INDUSTRY_OPTIONS.slice(0, -1).includes(savedIndustry)) {
+          setIndustry("其他");
+          setIndustryOther(savedIndustry);
+        } else {
+          setIndustry(savedIndustry);
+        }
         setContactTime(user.size ?? "");
       } catch {
         setError("用户信息加载失败，请重新登录后再试");
@@ -77,6 +86,10 @@ export function ProfileCompletePage() {
       setError("请选择所属行业");
       return;
     }
+    if (industry === "其他" && !industryOther.trim()) {
+      setError("请填写所属行业");
+      return;
+    }
     if (!contactTime) {
       setError("请选择方便联系时间");
       return;
@@ -87,13 +100,17 @@ export function ProfileCompletePage() {
     try {
       await updateProfile({
         company: company.trim(),
-        industry,
+        industry: industry === "其他" ? industryOther.trim() : industry,
         size: contactTime,
         ...(wechat.trim() ? { identity: `微信号：${wechat.trim()}` } : {}),
       });
-      router.replace(redirectPath);
+      setSuccessToast(true);
+      setTimeout(() => {
+        // 用硬跳转强制页面完整重载，确保资料列表用最新 isProfileComplete 重新请求
+        window.location.href = redirectPath;
+      }, 1000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "企业信息保存失败");
+      setError(err instanceof Error ? err.message : "企业信息保存失败，请稍后重试");
     } finally {
       setSaving(false);
     }
@@ -160,8 +177,11 @@ export function ProfileCompletePage() {
                     <select
                       id="industry"
                       value={industry}
-                      onChange={(event) => setIndustry(event.target.value)}
-                      className="h-12 w-full appearance-none rounded-lg border border-input bg-background px-3 pr-11 text-sm text-foreground shadow-sm outline-none focus:border-primary"
+                      onChange={(event) => {
+                        setIndustry(event.target.value);
+                        if (event.target.value !== "其他") setIndustryOther("");
+                      }}
+                      className="h-12 w-full appearance-none rounded-xl border border-input bg-background px-3 pr-11 text-sm text-foreground shadow-sm outline-none focus:border-primary"
                     >
                       <option value="">请选择所属行业</option>
                       {INDUSTRY_OPTIONS.map((item) => (
@@ -170,6 +190,14 @@ export function ProfileCompletePage() {
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   </div>
+                  {industry === "其他" && (
+                    <Input
+                      value={industryOther}
+                      onChange={(event) => setIndustryOther(event.target.value)}
+                      placeholder="请输入所属行业"
+                      className="h-12 rounded-xl"
+                    />
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -208,9 +236,19 @@ export function ProfileCompletePage() {
                   </div>
                 </div>
 
-                {error ? (
-                  <p className="rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
-                ) : null}
+                {successToast && (
+                  <div className="flex items-center gap-2 rounded-xl bg-success/10 px-3 py-3 text-sm font-medium text-success">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    企业信息保存成功，正在跳转...
+                  </div>
+                )}
+
+                {error && (
+                  <div className="flex items-center gap-2 rounded-xl bg-destructive/10 px-3 py-3 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    {error}
+                  </div>
+                )}
 
                 <div className="rounded-2xl bg-primary/5 p-3 text-xs leading-relaxed text-muted-foreground">
                   <div className="mb-1 flex items-center gap-1 font-medium text-primary">
