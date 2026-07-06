@@ -1393,7 +1393,11 @@ export async function loginOrCreateUserByPhone(params: {
     userId = newUser.id as string;
 
     if (params.sourceActivityId) {
-      await incrementActivityCounter(serviceClient, params.sourceActivityId, 'register');
+      try {
+        await incrementActivityCounter(serviceClient, params.sourceActivityId, 'register');
+      } catch (counterErr) {
+        console.error('[loginOrCreateUserByPhone] incrementActivityCounter failed:', counterErr instanceof Error ? counterErr.message : counterErr);
+      }
     }
   }
 

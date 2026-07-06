@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
     setUserAuthCookie(nextResponse, accessToken);
     return nextResponse;
   } catch (error) {
+    console.error('[login-phone] loginOrCreateUserByPhone failed:', { phone, sourceQrId, sourceActivityId, error: error instanceof Error ? error.message : error });
     return fail('USER_CREATE_FAILED', '用户登录失败', 500, error instanceof Error ? error.message : error);
   }
 }
