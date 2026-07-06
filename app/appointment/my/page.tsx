@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
@@ -47,7 +47,7 @@ function formatDateTime(value: string | null | undefined) {
   return date.toLocaleString("zh-CN", { hour12: false });
 }
 
-export default function AppointmentMyPage() {
+function AppointmentMyPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [items, setItems] = useState<AppointmentMySummaryDTO[]>([]);
@@ -173,5 +173,13 @@ export default function AppointmentMyPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function AppointmentMyPage() {
+  return (
+    <Suspense>
+      <AppointmentMyPageContent />
+    </Suspense>
   );
 }

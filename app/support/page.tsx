@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { ArrowLeft, AlertCircle, Bot, CalendarCheck, CheckCircle2, ChevronDown, Clock, Headphones, MessageCircle, Phone, Send, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +38,7 @@ const faqs = [
   },
 ];
 
-export default function Page() {
+function SupportPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [submitted, setSubmitted] = useState(false);
@@ -218,5 +218,13 @@ export default function Page() {
         <p className="text-center text-xs leading-relaxed text-muted-foreground">客服咨询仅用于处理平台使用和服务咨询问题，不构成正式税务意见。</p>
       </div>
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense>
+      <SupportPageContent />
+    </Suspense>
   );
 }

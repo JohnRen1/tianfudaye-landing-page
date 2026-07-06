@@ -72,40 +72,50 @@ export function LandingHomeClient({ fallback }: LandingHomeClientProps) {
   const [activity, setActivity] = useState<ActivityLandingDetailDTO | null>(null);
   const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
+  const loadActivity = async () => {
     const qrId = searchParams.get('qr_id');
     const activityId = searchParams.get('activity_id');
 
-    async function loadLandingActivity() {
-      try {
-        if (qrId) {
-          persistTrackingContext({ qrId, activityId, source: activityId ? 'activity' : 'home' });
-          const scanSessionId = getOrCreateQrScanSessionId(qrId);
-          const result = await trackQrScan(qrId, scanSessionId, navigator.userAgent);
-          if (result.activity) {
-            persistTrackingContext({ qrId, activityId: result.activity.id, source: 'activity' });
-            setActivity(result.activity);
-          }
-          return;
+    try {
+      if (qrId) {
+        persistTrackingContext({ qrId, activityId, source: activityId ? 'activity' : 'home' });
+        const scanSessionId = getOrCreateQrScanSessionId(qrId);
+        const result = await trackQrScan(qrId, scanSessionId, navigator.userAgent);
+        if (result.activity) {
+          persistTrackingContext({ qrId, activityId: result.activity.id, source: 'activity' });
+          setActivity(result.activity);
         }
-
-        if (activityId) {
-          persistTrackingContext({ qrId: null, activityId, source: 'activity' });
-          const result = await getActivityLanding(activityId);
-          setActivity(result);
-          return;
-        }
-
-        clearTrackingContext();
-      } catch {
-        setActivity(null);
-      } finally {
-        setLoaded(true);
+        return;
       }
-    }
 
-    void loadLandingActivity();
+      if (activityId) {
+        persistTrackingContext({ qrId: null, activityId, source: 'activity' });
+        const result = await getActivityLanding(activityId);
+        setActivity(result);
+        return;
+      }
+
+      clearTrackingContext();
+    } catch {
+      setActivity(null);
+    } finally {
+      setLoaded(true);
+    }
+  };
+
+  useEffect(() => {
+    void loadActivity();
   }, [searchParams]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && loaded) {
+        void loadActivity();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [searchParams, loaded]);
 
   if (!loaded && (searchParams.get('qr_id') || searchParams.get('activity_id'))) {
     return <div className="px-4 py-12 text-center text-sm text-muted-foreground">正在加载活动信息...</div>;
