@@ -112,14 +112,14 @@ function SupportPageContent() {
                   <Clock className="h-4 w-4 shrink-0 text-primary" />
                   <p className="font-medium text-foreground">工作日</p>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">09:00 - 18:00</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">08:30 - 17:30</p>
               </div>
               <div className="rounded-2xl bg-secondary/70 p-3">
                 <div className="flex items-center gap-2">
                   <Phone className="h-4 w-4 shrink-0 text-primary" />
                   <p className="font-medium text-foreground">客服热线</p>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">400-888-6688</p>
+                <p className="mt-1 text-xs text-muted-foreground">0531-82055700</p>
               </div>
             </div>
           </CardContent>
