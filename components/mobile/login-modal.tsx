@@ -29,7 +29,7 @@ export function LoginModal({ open, onOpenChange, onSuccess }: LoginModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[350px] overflow-hidden rounded-3xl p-0">
-        <DialogHeader className="relative rounded-t-3xl bg-gradient-to-br from-primary via-primary/95 to-primary/80 p-6 text-primary-foreground">
+        <DialogHeader className="mobile-safe-hero relative rounded-t-3xl bg-gradient-to-br from-primary via-primary/95 to-primary/80 p-6 text-primary-foreground">
           <div className="absolute inset-0 overflow-hidden rounded-t-3xl">
             <div className="absolute -right-10 -top-10 h-24 w-24 rounded-full bg-white/10" />
             <div className="absolute bottom-4 right-10 h-10 w-10 rounded-full bg-accent/30" />

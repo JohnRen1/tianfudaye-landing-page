@@ -23,7 +23,7 @@ function ActivityStatusNotice({ activity, status }: { activity: ActivityLandingD
   return (
     <div className="min-h-screen bg-background px-4 py-12">
       <Card className="overflow-hidden border-0 shadow-sm">
-        <div className="bg-gradient-to-br from-primary via-primary/90 to-primary/80 px-5 py-8 text-primary-foreground">
+        <div className="mobile-safe-hero bg-gradient-to-br from-primary via-primary/90 to-primary/80 px-5 py-8 text-primary-foreground">
           <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 backdrop-blur">
             <Icon className="h-7 w-7" />
           </div>

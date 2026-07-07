@@ -269,7 +269,7 @@ function RiskReportContent() {
   return (
     <div className="mx-auto min-h-screen max-w-[390px] bg-background pb-28">
       {/* Header */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
+      <div className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
         <div className="absolute -right-16 top-10 h-40 w-40 rounded-full border border-white/15" />
         <div className="absolute bottom-8 right-10 h-16 w-16 rounded-full bg-accent/20 blur-sm" />
 

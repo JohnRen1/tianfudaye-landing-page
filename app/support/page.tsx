@@ -82,7 +82,7 @@ function SupportPageContent() {
 
   return (
     <div className="mx-auto min-h-screen max-w-[390px] bg-background pb-8">
-      <div className="relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
+      <div className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
         <div className="absolute -right-16 top-8 h-36 w-36 rounded-full bg-white/10" />
         <Button variant="ghost" size="icon" className="mb-6 rounded-full text-white hover:bg-white/10 hover:text-white" onClick={() => router.push(buildPathWithTracking("/", searchParams))} aria-label="返回首页">
           <ArrowLeft className="h-5 w-5" />

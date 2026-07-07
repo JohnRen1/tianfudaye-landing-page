@@ -118,7 +118,7 @@ export function ProfileCompletePage() {
 
   return (
     <div className="min-h-screen bg-background pb-10">
-      <div className="relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-7 pt-4 text-primary-foreground">
+      <div className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-7 pt-4 text-primary-foreground">
         <div className="absolute -right-16 top-8 h-36 w-36 rounded-full border border-white/15" />
         <div className="absolute bottom-5 right-10 h-14 w-14 rounded-full bg-accent/25 blur-sm" />
         <div className="relative">

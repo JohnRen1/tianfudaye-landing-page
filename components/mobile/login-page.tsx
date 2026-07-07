@@ -29,7 +29,7 @@ export function LoginPage({ onBack, onSuccess }: LoginPageProps) {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-primary/10 via-background to-secondary/40 px-4 pb-8 pt-4">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-br from-primary via-primary/90 to-primary/70" />
+      <div className="mobile-safe-hero pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-br from-primary via-primary/90 to-primary/70" />
       <div className="pointer-events-none absolute -right-20 top-10 h-44 w-44 rounded-full bg-white/10" />
       <div className="pointer-events-none absolute left-8 top-32 h-16 w-16 rounded-full bg-accent/30 blur-sm" />
 

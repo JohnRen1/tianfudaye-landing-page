@@ -188,7 +188,7 @@ function AppointmentForm() {
               {isEnrollMode ? "报名已提交，顾问将在 1 个工作日内与您确认参会详情。" : "预约提交成功，顾问将在 1 个工作日内联系您。"}
             </p>
             <div className="mt-6 w-full space-y-3">
-              <Button className="h-12 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.push(isEnrollMode ? activityLandingPath : activityLandingPath)}>{isEnrollMode ? "返回活动页" : "返回首页"}</Button>
+              <Button className="h-12 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.push(activityLandingPath)}>{isEnrollMode ? "返回活动页" : "返回首页"}</Button>
               <Button variant="outline" className="h-12 w-full rounded-xl" onClick={() => router.push("/appointment/my")}>查看我的预约</Button>
               <Button variant="outline" className="h-12 w-full rounded-xl border-primary/20 text-primary" onClick={() => router.push(taxAiPath)}>继续问 AI</Button>
             </div>
@@ -199,8 +199,8 @@ function AppointmentForm() {
   }
 
   return (
-    <div className="mx-auto min-h-screen max-w-[390px] bg-background pb-28">
-      <div className="relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
+    <div className="mx-auto min-h-screen max-w-[390px] bg-background pb-44">
+      <div className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
         <div className="absolute -right-16 top-8 h-36 w-36 rounded-full bg-white/10" />
         <Button variant="ghost" size="icon" className="mb-6 rounded-full text-white hover:bg-white/10 hover:text-white" onClick={() => router.back()} aria-label="返回">
           <ArrowLeft className="h-5 w-5" />
@@ -351,7 +351,7 @@ function AppointmentForm() {
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 border-t border-border bg-card/95 p-4 shadow-lg backdrop-blur">
-        <div className="mx-auto max-w-[390px]">
+        <div className="mx-auto max-w-[390px] space-y-2">
           <Button
             className="h-12 w-full rounded-xl bg-accent text-base font-semibold text-accent-foreground hover:bg-accent/90 disabled:opacity-60"
             onClick={handleSubmit}
@@ -360,7 +360,15 @@ function AppointmentForm() {
             <Send className="mr-2 h-4 w-4" />
             {submitting ? "提交中..." : isEnrollMode ? "提交报名" : "提交预约"}
           </Button>
-          <div className="mt-2 flex items-center justify-center gap-1 text-xs text-muted-foreground">
+          <Button
+            variant="outline"
+            className="h-10 w-full rounded-xl text-sm"
+            onClick={() => router.push("/appointment/my")}
+          >
+            <CalendarCheck className="mr-2 h-4 w-4" />
+            我的预约
+          </Button>
+          <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
             <Clock className="h-3.5 w-3.5" />顾问通常将在 1 个工作日内联系
           </div>
         </div>

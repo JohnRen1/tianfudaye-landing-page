@@ -149,7 +149,7 @@ export function EventLandingPage({
   return (
     <div className="min-h-screen bg-background pb-24">
       {isGeneralLanding && (
-        <div className="relative overflow-hidden bg-gradient-to-br from-primary via-primary/90 to-primary/80 text-primary-foreground">
+        <div className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/90 to-primary/80 text-primary-foreground">
           <div className="absolute -right-16 top-8 h-40 w-40 rounded-full bg-amber-400/20 blur-2xl" />
           <div className="absolute -left-20 bottom-0 h-48 w-48 rounded-full bg-blue-400/15 blur-3xl" />
           <div className="relative px-4 pb-8 pt-12">
@@ -185,7 +185,7 @@ export function EventLandingPage({
           {/* 顶部活动封面区域 - 深蓝渐变 */}
           <div
             className={cn(
-              "relative bg-gradient-to-br from-primary via-primary/90 to-primary/80 text-primary-foreground",
+              "mobile-safe-hero relative bg-gradient-to-br from-primary via-primary/90 to-primary/80 text-primary-foreground",
               eventData.coverImage && "bg-cover bg-center",
             )}
             style={eventData?.coverImage ? { backgroundImage: `url("${eventData.coverImage}")` } : undefined}
@@ -473,10 +473,10 @@ export function EventLandingPage({
           {isGeneralLanding ? (
             <Button
               className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
-              onClick={() => requireLogin(() => router.push(withTrackingParams("/homepage-survey")))}
+              onClick={() => requireLogin(() => router.push(withTrackingParams("/appointment")))}
             >
               <Calendar className="mr-2 h-4 w-4" />
-              沙龙投票
+              立即预约
             </Button>
           ) : (
             <Button

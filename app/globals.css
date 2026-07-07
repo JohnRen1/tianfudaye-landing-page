@@ -142,3 +142,34 @@
     @apply bg-background text-foreground;
   }
 }
+
+.mobile-safe-hero {
+  background-color: #0b4f7a !important;
+  background-image: linear-gradient(135deg, #0b4f7a 0%, #0d5f8f 55%, #074166 100%) !important;
+  color: #ffffff !important;
+}
+
+.mobile-safe-primary-card {
+  background-color: #0b4f7a !important;
+  background-image: linear-gradient(135deg, #0b4f7a 0%, #0d5f8f 100%) !important;
+  color: #ffffff !important;
+}
+
+.mobile-safe-hero [class*="text-blue-50"],
+.mobile-safe-hero [class*="text-primary-foreground"],
+.mobile-safe-hero [class*="text-white"] {
+  color: #ffffff !important;
+}
+
+.mobile-safe-hero [class*="text-amber"] {
+  color: #f6c343 !important;
+}
+
+.mobile-safe-glass {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.mobile-safe-accent {
+  background-color: #f2a900 !important;
+  color: #2b2100 !important;
+}

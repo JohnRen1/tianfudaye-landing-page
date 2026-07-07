@@ -469,7 +469,7 @@ export function TaxAiAssistantPage() {
 
   return (
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden bg-background">
-      <header className="relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-6 pt-4 text-primary-foreground">
+      <header className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-6 pt-4 text-primary-foreground">
         <div className="absolute -right-20 top-5 h-44 w-44 rounded-full border border-white/15" />
         <div className="absolute -right-8 top-16 h-24 w-24 rounded-full border border-white/20" />
         <div className="absolute bottom-5 right-12 h-16 w-16 rounded-full bg-accent/20 blur-sm" />
