@@ -129,7 +129,9 @@ function AppointmentForm() {
 
     // topic 字段：中文标签 → AppointmentTopic 枚举值
     // 报名模式下 topic 是自由文本目的，映射不到枚举时用 'other'
-    const topicEnum = form.topic ? (TOPIC_LABEL_TO_ENUM[form.topic] ?? (isEnrollMode ? "other" as AppointmentTopic : undefined)) : undefined;
+    const topicEnum = isEnrollMode
+      ? ((form.topic ? TOPIC_LABEL_TO_ENUM[form.topic] : undefined) ?? "other" as AppointmentTopic)
+      : (form.topic ? TOPIC_LABEL_TO_ENUM[form.topic] : undefined);
     if (!isEnrollMode && !topicEnum) {
       setApiError("咨询主题无效，请重新选择");
       return;

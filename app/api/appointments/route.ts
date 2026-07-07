@@ -85,9 +85,10 @@ export async function POST(req: NextRequest) {
     typeof appointmentType === 'string' && ['consult', 'enroll', 'message'].includes(appointmentType)
       ? appointmentType
       : 'consult';
+  const isTopicOptional = resolvedAppointmentType === 'message' || resolvedAppointmentType === 'enroll';
   const isMessageType = resolvedAppointmentType === 'message';
 
-  if (!isMessageType && (typeof topic !== 'string' || !VALID_TOPICS.has(topic))) {
+  if (!isTopicOptional && (typeof topic !== 'string' || !VALID_TOPICS.has(topic))) {
     logAppointmentApi('invalid topic', { topic });
     return fail(
       APPOINTMENT_ERROR_CODES.APPOINTMENT_TOPIC_INVALID,
