@@ -206,6 +206,23 @@ export interface TrackingActivityDTO {
   coverImage: string | null;
   /** 活动状态，落地页据此决定是否展示"报名已结束"提示 */
   status: 'published' | 'draft' | 'closed';
+  /**
+   * 签到窗口状态。仅活动落地页使用，公司主页（无活动）不含此字段。
+   * 'open' = 签到窗口开启，底部按钮切换为"立即签到"
+   * 其余值或 undefined = 非签到窗口期，底部按钮显示"沙龙报名"
+   */
+  checkinWindowStatus?: 'open' | 'not_started' | 'ended' | 'force_closed' | 'activity_not_found';
+  /**
+   * 当前登录用户是否已完成本活动签到。
+   * 用于签到窗口开启时把底部按钮从"立即签到"切换为"已签到"。
+   */
+  alreadyCheckedIn?: boolean;
+  /**
+   * 签到所用二维码 id（qr_codes.id）。
+   * 签到窗口开启时与 checkinWindowStatus 一起返回，用于拼接 /checkin?qr_id=xxx 跳转链接。
+   * undefined 表示该活动无活动二维码，不展示签到按钮。
+   */
+  checkinQrId?: string | null;
   /** 当前活动绑定的已上架资料列表 */
   materials?: Array<{
     id: string;

@@ -208,7 +208,7 @@ function SupportPageContent() {
 
         <div className="grid grid-cols-2 gap-3">
           <Button variant="outline" className="h-12 rounded-xl" onClick={() => router.push(buildPathWithTracking("/tax-ai", searchParams))}>
-            <Bot className="mr-2 h-4 w-4" />继续问 AI
+            <Bot className="mr-2 h-4 w-4" />AI税务助手
           </Button>
           <Button className="h-12 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.push(buildPathWithTracking("/appointment", searchParams))}>
             <CalendarCheck className="mr-2 h-4 w-4" />预约顾问

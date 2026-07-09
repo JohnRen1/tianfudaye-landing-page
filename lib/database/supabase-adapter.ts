@@ -1104,7 +1104,13 @@ async function listActivityLandingMaterials(
     .filter((item): item is ActivityMaterialDisplayDTO => item !== null);
 }
 
-function mapTrackingActivity(row: Record<string, unknown>, materials: ActivityMaterialDisplayDTO[] = []): TrackingActivityDTO {
+function mapTrackingActivity(
+  row: Record<string, unknown>,
+  materials: ActivityMaterialDisplayDTO[] = [],
+  checkinWindowStatus?: TrackingActivityDTO['checkinWindowStatus'],
+  checkinQrId?: string | null,
+  alreadyCheckedIn?: boolean,
+): TrackingActivityDTO {
   const startAt = row.start_at as string;
   const endAt = (row.end_at as string | null) ?? null;
   const timeStart = formatShanghaiTime(startAt);
@@ -1120,6 +1126,9 @@ function mapTrackingActivity(row: Record<string, unknown>, materials: ActivityMa
     description: (row.description as string) ?? '',
     coverImage: (row.cover_image as string | null) ?? null,
     status: row.status as 'published' | 'draft' | 'closed',
+    ...(checkinWindowStatus !== undefined && { checkinWindowStatus }),
+    ...(checkinQrId !== undefined && { checkinQrId }),
+    ...(alreadyCheckedIn !== undefined && { alreadyCheckedIn }),
     materials,
   };
 }
@@ -1141,7 +1150,38 @@ export async function getActivityLandingDetail(
   const materials = activityStatus === 'published'
     ? await listActivityLandingMaterials(activityId, userId, isProfileComplete)
     : [];
-  return mapTrackingActivity(activity as Record<string, unknown>, materials);
+
+  // 查签到窗口状态和活动二维码（仅 published 活动需要）
+  let checkinWindowStatus: TrackingActivityDTO['checkinWindowStatus'] | undefined;
+  let checkinQrId: string | null | undefined;
+  let alreadyCheckedIn: boolean | undefined;
+  if (activityStatus === 'published') {
+    const [windowRes, qrRes, checkinRes] = await Promise.all([
+      serviceClient.rpc('get_checkin_window_status', { p_activity_id: activityId }),
+      serviceClient
+        .from('qr_codes')
+        .select('id')
+        .eq('activity_id', activityId)
+        .eq('type', 'activity')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      userId
+        ? serviceClient
+            .from('activity_checkins')
+            .select('id')
+            .eq('activity_id', activityId)
+            .eq('user_id', userId)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+    checkinWindowStatus = (windowRes.data as TrackingActivityDTO['checkinWindowStatus'] | null) ?? undefined;
+    checkinQrId = (qrRes.data as { id: string } | null)?.id ?? null;
+    alreadyCheckedIn = Boolean(checkinRes.data);
+  }
+
+  return mapTrackingActivity(activity as Record<string, unknown>, materials, checkinWindowStatus, checkinQrId, alreadyCheckedIn);
 }
 
 export async function trackQrScan(params: {
@@ -1248,12 +1288,33 @@ export async function trackQrScan(params: {
       )
     : [];
 
+  // 查签到窗口状态（仅 published 活动且有 activity_id 时查询）
+  let checkinWindowStatus: TrackingActivityDTO['checkinWindowStatus'] | undefined;
+  let alreadyCheckedInForScan: boolean | undefined;
+  if (activity && qrCode.activity_id && activityStatus === 'published') {
+    const [windowRes, checkinRes] = await Promise.all([
+      serviceClient.rpc('get_checkin_window_status', { p_activity_id: qrCode.activity_id as string }),
+      params.userId
+        ? serviceClient
+            .from('activity_checkins')
+            .select('id')
+            .eq('activity_id', qrCode.activity_id as string)
+            .eq('user_id', params.userId)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+    checkinWindowStatus = (windowRes.data as TrackingActivityDTO['checkinWindowStatus'] | null) ?? undefined;
+    alreadyCheckedInForScan = Boolean(checkinRes.data);
+  }
+
   return {
     valid: true,
     status: qrCode.status as 'active' | 'paused',
     advisorId: (qrCode.advisor_id as string | null) ?? null,
     advisorName,
-    activity: activity ? mapTrackingActivity(activity, materials) : null,
+    activity: activity
+      ? mapTrackingActivity(activity, materials, checkinWindowStatus, qrCode.activity_id ? (qrCode.id as string) : null, alreadyCheckedInForScan)
+      : null,
   };
 }
 

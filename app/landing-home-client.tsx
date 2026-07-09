@@ -130,6 +130,9 @@ export function LandingHomeClient({ fallback }: LandingHomeClientProps) {
         location: activity.location,
         description: activity.description,
         materials: activity.materials ?? [],
+        checkinWindowStatus: activity.checkinWindowStatus,
+        checkinQrId: activity.checkinQrId,
+        alreadyCheckedIn: activity.alreadyCheckedIn,
       }}
     />
   );

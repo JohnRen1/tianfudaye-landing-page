@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   FileText,
   MessageSquare,
@@ -49,6 +49,9 @@ interface EventLandingPageProps {
     description: string;
     coverImage?: string;
     materials?: EventMaterial[];
+    checkinWindowStatus?: 'open' | 'not_started' | 'ended' | 'force_closed' | 'activity_not_found';
+    checkinQrId?: string | null;
+    alreadyCheckedIn?: boolean;
   } | null;
   isLoggedIn?: boolean;
   onLogin?: () => void;
@@ -62,14 +65,29 @@ export function EventLandingPage({
   showActivitySections = false,
 }: EventLandingPageProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [downloadedMaterials, setDownloadedMaterials] = useState<string[]>([]);
   const [claimingMaterialId, setClaimingMaterialId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+  const [alreadyCheckedIn, setAlreadyCheckedIn] = useState(!!eventData?.alreadyCheckedIn);
   const isLoggedInRef = useRef(false);
   const materials = eventData?.materials ?? [];
   const isGeneralLanding = !showActivitySections;
+  const isCheckinOpen = showActivitySections && eventData?.checkinWindowStatus === 'open' && !!eventData?.checkinQrId;
+
+  useEffect(() => {
+    if (searchParams.get('checkedIn') === '1') {
+      setAlreadyCheckedIn(true);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (eventData?.alreadyCheckedIn) {
+      setAlreadyCheckedIn(true);
+    }
+  }, [eventData?.alreadyCheckedIn]);
 
   useEffect(() => {
     setDownloadedMaterials((eventData?.materials ?? []).filter((material) => material.claimStatus === "claimed").map((material) => material.id));
@@ -478,6 +496,37 @@ export function EventLandingPage({
               <Calendar className="mr-2 h-4 w-4" />
               立即预约
             </Button>
+          ) : isCheckinOpen ? (
+            alreadyCheckedIn ? (
+              <Button
+                className="flex-1 bg-success/90 text-white hover:bg-success"
+                onClick={() => {
+                  const checkinUrl = new URL(`/checkin`, window.location.origin);
+                  checkinUrl.searchParams.set('qr_id', eventData!.checkinQrId!);
+                  if (eventData?.id) checkinUrl.searchParams.set('activity_id', eventData.id);
+                  checkinUrl.searchParams.set('redirect', `/?qr_id=${eventData!.checkinQrId}${eventData?.id ? `&activity_id=${eventData.id}` : ''}`);
+                  router.push(checkinUrl.pathname + checkinUrl.search);
+                }}
+              >
+                <CheckCircle className="mr-2 h-4 w-4" />
+                已签到
+              </Button>
+            ) : (
+              <Button
+                className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
+                onClick={() => requireLogin(() => {
+                  const checkinUrl = new URL(`/checkin`, window.location.origin);
+                  checkinUrl.searchParams.set('qr_id', eventData!.checkinQrId!);
+                  if (eventData?.id) checkinUrl.searchParams.set('activity_id', eventData.id);
+                  checkinUrl.searchParams.set('redirect', `/?qr_id=${eventData!.checkinQrId}${eventData?.id ? `&activity_id=${eventData.id}` : ''}`);
+                  setAlreadyCheckedIn(false);
+                  router.push(checkinUrl.pathname + checkinUrl.search);
+                })}
+              >
+                <Calendar className="mr-2 h-4 w-4" />
+                立即签到
+              </Button>
+            )
           ) : (
             <Button
               className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"

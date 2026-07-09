@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
+  CalendarCheck,
   CalendarDays,
   CheckCircle2,
   Clock,
@@ -12,6 +13,7 @@ import {
   MapPin,
   QrCode,
   RefreshCcw,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -28,6 +30,15 @@ function CheckinContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const qrId = searchParams.get("qr_id") ?? searchParams.get("qr");
+  const redirectPath = searchParams.get("redirect");
+  const activityId = searchParams.get("activity_id") ?? searchParams.get("activity");
+  const landingReturnPath = (() => {
+    if (redirectPath) return redirectPath;
+    const params = new URLSearchParams();
+    if (qrId) params.set("qr_id", qrId);
+    if (activityId) params.set("activity_id", activityId);
+    return params.size > 0 ? `/?${params.toString()}` : "/";
+  })();
 
   const [pageData, setPageData] = useState<CheckinPageDTO | null>(null);
   const [loading, setLoading] = useState(true);
@@ -74,10 +85,17 @@ function CheckinContent() {
       const result = await submitCheckin(pageData.checkinQrId);
       setCheckinCount(result.checkinCount);
       setSuccess(true);
+      // 签到成功后跳回活动落地页（携带 checkedIn=1 标记）
+      const redirectUrl = new URL(landingReturnPath, window.location.origin);
+      redirectUrl.searchParams.set("checkedIn", "1");
+      router.replace(redirectUrl.pathname + redirectUrl.search);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === "CHECKIN_ALREADY_DONE") {
           setSuccess(true);
+          const redirectUrl = new URL(landingReturnPath, window.location.origin);
+          redirectUrl.searchParams.set("checkedIn", "1");
+          router.replace(redirectUrl.pathname + redirectUrl.search);
           return;
         }
         setSubmitError(err.message);
@@ -145,8 +163,8 @@ function CheckinContent() {
             variant="ghost"
             size="icon"
             className="mb-6 rounded-full text-white hover:bg-white/10"
-            onClick={() => router.push("/")}
-            aria-label="返回首页"
+            onClick={() => router.push(landingReturnPath)}
+            aria-label="返回活动页"
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
@@ -186,13 +204,24 @@ function CheckinContent() {
             </CardContent>
           </Card>
 
-          <Button
-            className="h-12 w-full rounded-xl"
-            variant="outline"
-            onClick={() => router.push("/")}
-          >
-            返回首页
-          </Button>
+          <div className="grid grid-cols-2 gap-3">
+            <Button variant="outline" className="h-12 rounded-xl" onClick={() => {
+              const aiUrl = new URL('/tax-ai', window.location.origin);
+              if (qrId) aiUrl.searchParams.set('qr_id', qrId);
+              if (activityId) aiUrl.searchParams.set('activity_id', activityId);
+              router.push(aiUrl.pathname + aiUrl.search);
+            }}>
+              <Sparkles className="mr-2 h-4 w-4" />AI税务助手
+            </Button>
+            <Button className="h-12 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => {
+              const appointmentUrl = new URL('/appointment', window.location.origin);
+              if (qrId) appointmentUrl.searchParams.set('qr_id', qrId);
+              if (activityId) appointmentUrl.searchParams.set('activity_id', activityId);
+              router.push(appointmentUrl.pathname + appointmentUrl.search);
+            }}>
+              <CalendarCheck className="mr-2 h-4 w-4" />预约顾问
+            </Button>
+          </div>
         </div>
       </div>
     );
