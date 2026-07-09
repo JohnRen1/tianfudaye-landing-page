@@ -3,7 +3,11 @@ import { EventLandingPage } from "@/components/mobile/event-landing-page";
 import { LandingHomeClient } from "./landing-home-client";
 
 function GeneralLandingPage() {
-  return <EventLandingPage eventData={null} />;
+  return (
+    <Suspense>
+      <EventLandingPage eventData={null} />
+    </Suspense>
+  );
 }
 
 export default function Page() {
