@@ -179,24 +179,29 @@ export function LoginRegisterForm({
 
   return (
     <div className={cn("space-y-5", compact && "space-y-4")}>
-      <Button
-        className="h-12 w-full rounded-xl bg-[#07C160] text-base font-semibold text-white shadow-sm hover:bg-[#06ad56]"
-        disabled={!agreed || isLoading}
-        onClick={handleWechatLogin}
-      >
-        {isLoading && loginType === "wechat" ? (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        ) : (
-          <MessageCircle className="mr-2 h-5 w-5" />
-        )}
-        微信授权登录
-      </Button>
+      {/* 微信授权登录暂未开放，隐藏按钮和分隔线 */}
+      {false && (
+        <>
+          <Button
+            className="h-12 w-full rounded-xl bg-[#07C160] text-base font-semibold text-white shadow-sm hover:bg-[#06ad56]"
+            disabled={!agreed || isLoading}
+            onClick={handleWechatLogin}
+          >
+            {isLoading && loginType === "wechat" ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <MessageCircle className="mr-2 h-5 w-5" />
+            )}
+            微信授权登录
+          </Button>
 
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-        <div className="h-px flex-1 bg-border" />
-        <span>或使用手机号验证码登录</span>
-        <div className="h-px flex-1 bg-border" />
-      </div>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <div className="h-px flex-1 bg-border" />
+            <span>或使用手机号验证码登录</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+        </>
+      )}
 
       <div className="space-y-3">
         <div className="space-y-2">
