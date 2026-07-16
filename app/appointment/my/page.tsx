@@ -119,7 +119,7 @@ function AppointmentMyPageContent() {
                 <CalendarCheck className="h-8 w-8 text-primary" />
                 <p className="text-sm text-muted-foreground">当前还没有预约记录，先去提交一次预约吧。</p>
                 <Button className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.push(buildPathWithTracking("/appointment", searchParams))}>
-                  去预约顾问
+                  预约顾问
                 </Button>
               </div>
             ) : (

@@ -40,6 +40,7 @@ export function ProfileCompletePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectPath = useMemo(() => getSafeRedirect(searchParams.get("redirect")), [searchParams]);
+  const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [industry, setIndustry] = useState("");
   const [industryOther, setIndustryOther] = useState("");
@@ -60,6 +61,7 @@ export function ProfileCompletePage() {
 
       try {
         const user = await me();
+        setName(user.name ?? "");
         setCompany(user.company ?? "");
         const savedIndustry = user.industry ?? "";
         if (savedIndustry && !INDUSTRY_OPTIONS.slice(0, -1).includes(savedIndustry)) {
@@ -78,6 +80,10 @@ export function ProfileCompletePage() {
   }, [redirectPath, router]);
 
   const handleSubmit = async () => {
+    if (!name.trim()) {
+      setError("请填写联系人姓名");
+      return;
+    }
     if (!company.trim()) {
       setError("请填写企业名称");
       return;
@@ -99,6 +105,7 @@ export function ProfileCompletePage() {
     setSaving(true);
     try {
       await updateProfile({
+        name: name.trim(),
         company: company.trim(),
         industry: industry === "其他" ? industryOther.trim() : industry,
         size: contactTime,
@@ -153,6 +160,22 @@ export function ProfileCompletePage() {
               <div className="py-10 text-center text-sm text-muted-foreground">正在加载企业信息...</div>
             ) : (
               <>
+                <div className="space-y-2">
+                  <Label htmlFor="contact-name" className="text-sm font-medium">
+                    联系人姓名 <span className="text-destructive">*</span>
+                  </Label>
+                  <div className="relative">
+                    <BriefcaseBusiness className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="contact-name"
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      placeholder="请输入您的姓名"
+                      className="h-12 rounded-xl pl-10"
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="company" className="text-sm font-medium">
                     企业名称 <span className="text-destructive">*</span>

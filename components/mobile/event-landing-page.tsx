@@ -76,6 +76,11 @@ export function EventLandingPage({
   const materials = eventData?.materials ?? [];
   const isGeneralLanding = !showActivitySections;
   const isCheckinOpen = showActivitySections && eventData?.checkinWindowStatus === 'open' && !!eventData?.checkinQrId;
+  // 活动已结束或被强制关闭时，报名入口无意义，改为预约顾问
+  const isActivityOver = showActivitySections && (
+    eventData?.checkinWindowStatus === 'ended' ||
+    eventData?.checkinWindowStatus === 'force_closed'
+  );
 
   useEffect(() => {
     if (searchParams.get('checkedIn') === '1') {
@@ -494,7 +499,7 @@ export function EventLandingPage({
               onClick={() => requireLogin(() => router.push(withTrackingParams("/appointment")))}
             >
               <Calendar className="mr-2 h-4 w-4" />
-              立即预约
+              预约顾问
             </Button>
           ) : isCheckinOpen ? (
             alreadyCheckedIn ? (
@@ -527,6 +532,14 @@ export function EventLandingPage({
                 立即签到
               </Button>
             )
+          ) : isActivityOver ? (
+            <Button
+              className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
+              onClick={() => requireLogin(() => router.push(withTrackingParams("/appointment")))}
+            >
+              <Calendar className="mr-2 h-4 w-4" />
+              预约顾问
+            </Button>
           ) : (
             <Button
               className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
