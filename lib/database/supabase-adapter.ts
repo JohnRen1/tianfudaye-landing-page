@@ -152,10 +152,6 @@ const MODULE_COPY: Record<ReportModuleKey, Record<RiskLevel, { desc: string; adv
       desc: '发票合规风险较高，可能影响增值税抵扣和所得税扣除。',
       advice: '建议开展发票专项自查，优先处理异常发票和业务不匹配记录。',
     },
-    critical: {
-      desc: '发票合规存在严重风险，需尽快进行专项诊断。',
-      advice: '建议暂停高风险票据处理，整理完整证据链并预约顾问介入。',
-    },
   },
   report_fund: {
     low: {
@@ -169,10 +165,6 @@ const MODULE_COPY: Record<ReportModuleKey, Record<RiskLevel, { desc: string; adv
     high: {
       desc: '公转私和资金混同风险较高，可能引发税务关注。',
       advice: '建议规范收付款账户，补齐合同、借款协议和业务说明。',
-    },
-    critical: {
-      desc: '资金往来存在严重异常，可能形成重点稽查线索。',
-      advice: '建议立即梳理近两年资金流水，制定整改和解释口径。',
     },
   },
   report_cost: {
@@ -188,10 +180,6 @@ const MODULE_COPY: Record<ReportModuleKey, Record<RiskLevel, { desc: string; adv
       desc: '成本费用税前扣除风险较高，可能导致纳税调整。',
       advice: '建议对大额费用、无票支出和长期低利润情况开展复核。',
     },
-    critical: {
-      desc: '成本费用和所得税风险严重，需尽快处理历史问题。',
-      advice: '建议建立整改清单，优先处理无票成本、替票入账和异常费用。',
-    },
   },
   report_payroll: {
     low: {
@@ -205,10 +193,6 @@ const MODULE_COPY: Record<ReportModuleKey, Record<RiskLevel, { desc: string; adv
     high: {
       desc: '个税社保风险较高，可能涉及补缴或纳税调整。',
       advice: '建议梳理员工薪资发放方式，减少私户发放和不合规拆分。',
-    },
-    critical: {
-      desc: '个税社保存在严重异常，需优先整改。',
-      advice: '建议对历史工资、个税和社保数据进行专项核对。',
     },
   },
   report_audit: {
@@ -485,6 +469,20 @@ export async function submitAssessment(
 
   if (payload.sourceActivityId) {
     await incrementActivityCounter(serviceClient, payload.sourceActivityId, 'assessments');
+  }
+
+  // 自动同步线索（已登录用户才创建，fire-and-forget）
+  if (userId) {
+    const eventType =
+      riskLevel === 'high' ? 'assessment_high'
+      : riskLevel === 'medium' ? 'assessment_medium'
+      : 'assessment_low';
+    void upsertLeadFromEvent({
+      userId,
+      eventType,
+      activityId: payload.sourceActivityId ?? null,
+      riskLevel: riskLevel as RiskLevel,
+    });
   }
 
   return { reportId, score: totalScore, riskLevel, modules };
@@ -815,6 +813,17 @@ export async function createQaRecord(params: {
 
   if (params.activityId) {
     await incrementActivityCounter(serviceClient, params.activityId, 'ai_questions');
+  }
+
+  // 自动同步线索（已登录用户才创建，fire-and-forget）
+  if (params.userId) {
+    const eventType = params.answer.riskLevel === 'high' ? 'qa_high_risk' : 'qa_normal';
+    void upsertLeadFromEvent({
+      userId: params.userId,
+      eventType,
+      activityId: params.activityId,
+      riskLevel: params.answer.riskLevel as RiskLevel,
+    });
   }
 
   return {
@@ -1634,6 +1643,136 @@ export async function getCheckinPageData(
  * 提交签到。
  * 校验窗口 → 防重复 → 写入记录 → 计数器 +1。
  */
+// ============================================================================
+// 线索自动同步：内部工具函数
+// ============================================================================
+
+/**
+ * 线索触发事件类型，决定加分维度和 tag。
+ * - qa_high_risk      : AI 问答高风险
+ * - qa_normal         : AI 问答（非高风险，仍值得记录）
+ * - assessment_high   : 财税测评高风险
+ * - assessment_medium : 财税测评中风险
+ * - assessment_low    : 财税测评低风险
+ * - survey_submit     : 沙龙投票提交
+ * - checkin           : 沙龙签到
+ */
+type LeadEventType =
+  | 'qa_high_risk'
+  | 'qa_normal'
+  | 'assessment_high'
+  | 'assessment_medium'
+  | 'assessment_low'
+  | 'survey_submit'
+  | 'checkin';
+
+const LEAD_EVENT_SCORE: Record<LeadEventType, number> = {
+  qa_high_risk: 40,
+  qa_normal: 10,
+  assessment_high: 60,
+  assessment_medium: 30,
+  assessment_low: 10,
+  survey_submit: 20,
+  checkin: 15,
+};
+
+const LEAD_EVENT_TAG: Record<LeadEventType, string> = {
+  qa_high_risk: 'AI高风险问答',
+  qa_normal: 'AI问答',
+  assessment_high: '高风险测评',
+  assessment_medium: '中风险测评',
+  assessment_low: '低风险测评',
+  survey_submit: '沙龙投票',
+  checkin: '沙龙签到',
+};
+
+/**
+ * 根据总分计算意向等级（与后台 scoreToLeadLevel 逻辑保持一致）。
+ */
+function calcLeadLevel(score: number): 'strong' | 'high' | 'potential' | 'normal' {
+  if (score >= 100) return 'strong';
+  if (score >= 70) return 'high';
+  if (score >= 40) return 'potential';
+  return 'normal';
+}
+
+/**
+ * upsertLeadFromEvent — 落地页各行为触发点的线索自动同步入口。
+ *
+ * 策略：
+ *   1. 优先从线索表取该用户最新一条非终态线索
+ *   2. 存在 → 追加分值 + tag，不降级等级，不改变终态
+ *   3. 不存在 → 创建新线索（status=new）
+ *   4. 同步更新 users.lead_status
+ *   5. 全程 fire-and-forget，抛错只 console.error，不影响主流程
+ */
+async function upsertLeadFromEvent(params: {
+  userId: string;
+  eventType: LeadEventType;
+  activityId?: string | null;
+  qrCodeId?: string | null;
+  riskLevel?: RiskLevel | null;
+}): Promise<void> {
+  try {
+    const client = createServiceClient();
+    const addScore = LEAD_EVENT_SCORE[params.eventType];
+    const tag = LEAD_EVENT_TAG[params.eventType];
+
+    const { data: existing } = await client
+      .from('leads')
+      .select('id, score, level, tags, status')
+      .eq('user_id', params.userId)
+      .not('status', 'in', '("converted","invalid")')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      const prevScore = (existing.score as number) ?? 0;
+      const nextScore = prevScore + addScore;
+      const prevTags = (existing.tags as string[]) ?? [];
+      const nextTags = prevTags.includes(tag) ? prevTags : [...prevTags, tag];
+      const nextLevel = calcLeadLevel(nextScore);
+
+      await client
+        .from('leads')
+        .update({
+          score: nextScore,
+          level: nextLevel,
+          tags: nextTags,
+          ...(params.riskLevel ? { risk_level: params.riskLevel } : {}),
+        })
+        .eq('id', existing.id as string);
+    } else {
+      const score = addScore;
+      const level = calcLeadLevel(score);
+      const { data: newLead } = await client
+        .from('leads')
+        .insert({
+          user_id: params.userId,
+          activity_id: params.activityId ?? null,
+          qr_code_id: params.qrCodeId ?? null,
+          tags: [tag],
+          score,
+          level,
+          risk_level: params.riskLevel ?? null,
+          status: 'new',
+        })
+        .select('id')
+        .single();
+
+      if (newLead) {
+        await client
+          .from('users')
+          .update({ lead_status: 'new' })
+          .eq('id', params.userId);
+      }
+    }
+  } catch (err) {
+    console.error('[upsertLeadFromEvent] failed silently', params.eventType, err);
+  }
+}
+
 export async function submitCheckin(
   params: CheckinSubmitDTO & { userId: string; ipAddress?: string },
 ): Promise<CheckinSubmitResponseDTO> {
@@ -1684,6 +1823,14 @@ export async function submitCheckin(
     .select('name, checkin_count')
     .eq('id', activityId)
     .single();
+
+  // 自动同步线索（签到 = 意向信号，fire-and-forget）
+  void upsertLeadFromEvent({
+    userId: params.userId,
+    eventType: 'checkin',
+    activityId,
+    qrCodeId: params.checkinQrId,
+  });
 
   return {
     checkinId: newCheckin.id as string,
