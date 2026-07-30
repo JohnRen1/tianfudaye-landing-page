@@ -1,10 +1,12 @@
 import type { CurrentUserDTO } from './contracts/auth';
 import { buildPhoneLoginResponse, loginOrCreateUserByPhone } from './db';
-import { pickEnvByStage, pickTruthyEnvByStage } from './env';
+import { isProdEnv, pickEnvByStage, pickTruthyEnvByStage } from './env';
 
 const DEFAULT_PHONE = '18660396808';
 
 export function isUserAuthBypassEnabled(): boolean {
+  if (isProdEnv()) return false;
+
   return pickTruthyEnvByStage(
     process.env.AUTH_BYPASS_ENABLED,
     process.env.NEXT_PUBLIC_AUTH_BYPASS_ENABLED,

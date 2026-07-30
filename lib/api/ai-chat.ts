@@ -49,6 +49,7 @@ export async function sendMessageStream(
   question: string,
   sessionId: string | null | undefined,
   activityId: string | null | undefined,
+  recentHistory: AiChatRequestDTO['recentHistory'],
   handlers: {
     onDelta: (text: string) => void;
     onDone: (response: AiChatResponseDTO) => void;
@@ -59,6 +60,7 @@ export async function sendMessageStream(
     question,
     ...(sessionId !== undefined ? { sessionId } : {}),
     ...(activityId !== undefined ? { activityId } : {}),
+    ...(recentHistory?.length ? { recentHistory } : {}),
     stream: true,
   };
   const headers = new Headers({ 'Content-Type': 'application/json' });

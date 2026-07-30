@@ -1,10 +1,10 @@
+import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { createQaRecord } from '@/lib/db';
 import { ok, fail } from '@/lib/api-response';
 import { requireUser } from '@/lib/auth';
 import { AI_CHAT_ERROR_CODES } from '@/lib/contracts/ai-chat';
 import type { AiAnswerBodyDTO, AiCitationDTO } from '@/lib/contracts/ai-chat';
-import type { RiskLevel } from '@/lib/contracts/shared';
 import { isProdEnv, pickEnvByStage } from '@/lib/env';
 
 export const dynamic = 'force-dynamic';
@@ -29,6 +29,13 @@ interface RagStreamResult {
   citations: AiCitationDTO[];
 }
 
+interface RagStreamPayload {
+  delta?: string;
+  answer?: string;
+  citations?: AiCitationDTO[];
+  errorMessage?: string;
+}
+
 function getRagChatUrl(): string {
   const configuredUrl = pickEnvByStage(
     process.env.RAG_CHAT_URL,
@@ -51,6 +58,18 @@ function getRagMaxTokens(): number {
   return Math.max(800, Number(process.env.RAG_CHAT_MAX_TOKENS ?? 2400));
 }
 
+function getAgentRequestHeaders(accept?: string): HeadersInit {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (accept) headers.Accept = accept;
+  const agentApiKey = process.env.TAX_AGENT_API_KEY?.trim();
+  if (agentApiKey) headers['X-Agent-API-Key'] = agentApiKey;
+  return headers;
+}
+
+function getAgentSessionId(userId: string, sessionId: string): string {
+  return createHash('sha256').update(`${userId}:${sessionId}`).digest('hex');
+}
+
 function normalizeCitation(raw: RagCitationRaw): AiCitationDTO {
   return {
     title: typeof raw.title === 'string' ? raw.title : '未命名来源',
@@ -62,12 +81,6 @@ function normalizeCitation(raw: RagCitationRaw): AiCitationDTO {
   };
 }
 
-function inferRiskLevel(answerText: string): RiskLevel {
-  if (/严重风险|重大风险|高风险|稽查|补缴|处罚/.test(answerText)) return 'high';
-  if (/风险|建议|确认|关注|核查|留存/.test(answerText)) return 'medium';
-  return 'low';
-}
-
 function buildRagAnswer(question: string, ragResponse: RagChatResponseRaw): AiAnswerBodyDTO {
   const answerText = typeof ragResponse.answer === 'string' ? ragResponse.answer.trim() : '';
   const citations = Array.isArray(ragResponse.citations)
@@ -75,18 +88,16 @@ function buildRagAnswer(question: string, ragResponse: RagChatResponseRaw): AiAn
         .filter((item): item is RagCitationRaw => typeof item === 'object' && item !== null)
         .map(normalizeCitation)
     : [];
-  const riskLevel = inferRiskLevel(answerText);
-  const advisorRecommended = riskLevel === 'high' || /建议.*顾问|专业税务顾问|主管税务机关/.test(answerText);
 
   return {
     answerText: answerText || '暂未生成有效回答，请稍后重试。',
     questionUnderstanding: `您询问的是：${question.slice(0, 80)}${question.length > 80 ? '...' : ''}`,
     initialJudgment: answerText || '暂未生成有效回答，请稍后重试。',
-    involvedRisks: riskLevel === 'low' ? ['暂未识别明显高风险事项'] : ['需结合业务事实确认适用条件和留存资料', '需关注政策口径、申报填报和税务核查风险'],
-    suggestions: ['结合企业实际合同、凭证和申报数据复核', '必要时咨询专业税务顾问或主管税务机关'],
-    riskLevel,
-    advisorRecommended,
-    needsConfirmation: /建议|确认|主管税务机关|专业税务顾问|拿不准|结合具体/.test(answerText),
+    involvedRisks: [],
+    suggestions: [],
+    riskLevel: 'low',
+    advisorRecommended: false,
+    needsConfirmation: false,
     knowledgeItemIds: citations.map((item) => item.docId).filter(Boolean),
     citations,
   };
@@ -94,33 +105,36 @@ function buildRagAnswer(question: string, ragResponse: RagChatResponseRaw): AiAn
 
 function buildRagAnswerFromText(question: string, answerTextValue: string, citations: AiCitationDTO[]): AiAnswerBodyDTO {
   const answerText = answerTextValue.trim();
-  const riskLevel = inferRiskLevel(answerText);
-  const advisorRecommended = riskLevel === 'high' || /建议.*顾问|专业税务顾问|主管税务机关/.test(answerText);
-
   return {
     answerText: answerText || '暂未生成有效回答，请稍后重试。',
     questionUnderstanding: `您询问的是：${question.slice(0, 80)}${question.length > 80 ? '...' : ''}`,
     initialJudgment: answerText || '暂未生成有效回答，请稍后重试。',
-    involvedRisks: riskLevel === 'low' ? ['暂未识别明显高风险事项'] : ['需结合业务事实确认适用条件和留存资料', '需关注政策口径、申报填报和税务核查风险'],
-    suggestions: ['结合企业实际合同、凭证和申报数据复核', '必要时咨询专业税务顾问或主管税务机关'],
-    riskLevel,
-    advisorRecommended,
-    needsConfirmation: /建议|确认|主管税务机关|专业税务顾问|拿不准|结合具体/.test(answerText),
+    involvedRisks: [],
+    suggestions: [],
+    riskLevel: 'low',
+    advisorRecommended: false,
+    needsConfirmation: false,
     knowledgeItemIds: citations.map((item) => item.docId).filter(Boolean),
     citations,
   };
 }
 
-async function callRagChat(question: string): Promise<RagChatResponseRaw> {
+async function callRagChat(
+  question: string,
+  sessionId: string,
+  recentHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+): Promise<RagChatResponseRaw> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Number(process.env.RAG_CHAT_TIMEOUT_MS ?? 60000));
 
   try {
     const response = await fetch(getRagChatUrl(), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAgentRequestHeaders(),
       body: JSON.stringify({
         query: question,
+        session_id: sessionId,
+        recent_history: recentHistory,
         top_k: Number(process.env.RAG_CHAT_TOP_K ?? 6),
         max_tokens: getRagMaxTokens(),
         max_new_tokens: getRagMaxTokens(),
@@ -144,7 +158,7 @@ async function callRagChat(question: string): Promise<RagChatResponseRaw> {
   }
 }
 
-function parseRagStreamPayload(raw: string): { delta?: string; answer?: string; citations?: AiCitationDTO[] } | null {
+function parseRagStreamPayload(raw: string): RagStreamPayload | null {
   const trimmed = raw.trim();
   if (!trimmed || trimmed === '[DONE]') return null;
   const dataText = trimmed.startsWith('data:') ? trimmed.slice(5).trim() : trimmed;
@@ -163,12 +177,14 @@ function parseRagStreamPayload(raw: string): { delta?: string; answer?: string; 
               ? payload.token
               : undefined;
     const answer = typeof payload.answer === 'string' ? payload.answer : undefined;
+    const errorMessage =
+      payload.type === 'error' && typeof payload.message === 'string' ? payload.message : undefined;
     const citations = Array.isArray(payload.citations)
       ? payload.citations
           .filter((item): item is RagCitationRaw => typeof item === 'object' && item !== null)
           .map(normalizeCitation)
       : undefined;
-    return { delta, answer, citations };
+    return { delta, answer, citations, errorMessage };
   } catch {
     return { delta: dataText };
   }
@@ -192,7 +208,12 @@ function splitRagStreamEvents(buffer: string, flush = false): { events: string[]
   return { events: [], rest: buffer };
 }
 
-async function callRagChatStream(question: string, onDelta: (text: string) => void): Promise<RagStreamResult> {
+async function callRagChatStream(
+  question: string,
+  sessionId: string,
+  recentHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+  onDelta: (text: string) => void,
+): Promise<RagStreamResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Number(process.env.RAG_CHAT_TIMEOUT_MS ?? 60000));
   let answerText = '';
@@ -201,9 +222,11 @@ async function callRagChatStream(question: string, onDelta: (text: string) => vo
   try {
     const response = await fetch(getRagChatUrl(), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      headers: getAgentRequestHeaders('text/event-stream'),
       body: JSON.stringify({
         query: question,
+        session_id: sessionId,
+        recent_history: recentHistory,
         top_k: Number(process.env.RAG_CHAT_TOP_K ?? 6),
         max_tokens: getRagMaxTokens(),
         max_new_tokens: getRagMaxTokens(),
@@ -276,6 +299,7 @@ async function callRagChatStream(question: string, onDelta: (text: string) => vo
         const payloadText = dataLines.length > 0 ? dataLines.join('\n') : event.trim();
         const payload = parseRagStreamPayload(payloadText);
         if (!payload) continue;
+        if (payload.errorMessage) throw new Error(payload.errorMessage);
         if (payload.citations) citations = payload.citations;
         if (payload.answer !== undefined) answerText = payload.answer;
         if (payload.delta) {
@@ -292,6 +316,7 @@ async function callRagChatStream(question: string, onDelta: (text: string) => vo
       const { events } = splitRagStreamEvents(buffer, true);
       for (const event of events) {
         const payload = parseRagStreamPayload(event);
+        if (payload?.errorMessage) throw new Error(payload.errorMessage);
         if (payload?.citations) citations = payload.citations;
         if (payload?.answer !== undefined) answerText = payload.answer;
         if (payload?.delta) {
@@ -322,7 +347,7 @@ export async function POST(req: NextRequest) {
     return fail(AI_CHAT_ERROR_CODES.VALIDATION_ERROR, '请求体格式错误', 400);
   }
 
-  const { question, sessionId, activityId, stream } = body as Record<string, unknown>;
+  const { question, sessionId, activityId, recentHistory, stream } = body as Record<string, unknown>;
 
   if (typeof question !== 'string' || question.trim().length === 0) {
     return fail(AI_CHAT_ERROR_CODES.AI_CHAT_QUESTION_EMPTY, '问题内容不能为空', 400);
@@ -346,7 +371,22 @@ export async function POST(req: NextRequest) {
     return fail('AUTH_REQUIRED', '请先登录后再使用 AI 问答', 401);
   }
   const userId: string = userCtx.userId;
+  const agentSessionId = getAgentSessionId(userId, resolvedSessionId);
   const normalizedQuestion = question.trim();
+  const normalizedHistory = Array.isArray(recentHistory)
+    ? recentHistory
+        .filter(
+          (item): item is { role: 'user' | 'assistant'; content: string } =>
+            typeof item === 'object' &&
+            item !== null &&
+            ((item as Record<string, unknown>).role === 'user' ||
+              (item as Record<string, unknown>).role === 'assistant') &&
+            typeof (item as Record<string, unknown>).content === 'string',
+        )
+        .map((item) => ({ role: item.role, content: item.content.trim().slice(0, 4000) }))
+        .filter((item) => item.content.length > 0)
+        .slice(-10)
+    : [];
 
   if (stream === true) {
     if (isAiStreamDebugEnabled()) {
@@ -358,11 +398,13 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
     const readable = new ReadableStream<Uint8Array>({
       async start(controller) {
+        let failureStage: 'agent_stream' | 'qa_record' = 'agent_stream';
         try {
-          const ragResult = await callRagChatStream(normalizedQuestion, (text) => {
+          const ragResult = await callRagChatStream(normalizedQuestion, agentSessionId, normalizedHistory, (text) => {
             controller.enqueue(encoder.encode(streamEvent({ type: 'delta', text })));
           });
           const answer = buildRagAnswerFromText(normalizedQuestion, ragResult.answerText, ragResult.citations);
+          failureStage = 'qa_record';
           const response = await createQaRecord({
             userId,
             sessionId: resolvedSessionId,
@@ -373,6 +415,11 @@ export async function POST(req: NextRequest) {
           controller.enqueue(encoder.encode(streamEvent({ type: 'done', data: response })));
         } catch (error) {
           const aborted = error instanceof Error && error.name === 'AbortError';
+          console.error('[ai/chat/stream] request failed', {
+            stage: failureStage,
+            name: error instanceof Error ? error.name : 'UnknownError',
+            message: error instanceof Error ? error.message : String(error),
+          });
           controller.enqueue(
             encoder.encode(
               streamEvent({
@@ -400,7 +447,7 @@ export async function POST(req: NextRequest) {
 
   let answer: AiAnswerBodyDTO;
   try {
-    const ragResponse = await callRagChat(normalizedQuestion);
+    const ragResponse = await callRagChat(normalizedQuestion, agentSessionId, normalizedHistory);
     answer = buildRagAnswer(normalizedQuestion, ragResponse);
   } catch (error) {
     const aborted = error instanceof Error && error.name === 'AbortError';

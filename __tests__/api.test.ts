@@ -286,6 +286,31 @@ describe('POST /api/ai/chat', () => {
     expect(body.data.answer.riskLevel).toBeTruthy();
     expect(Array.isArray(body.data.answer.involvedRisks)).toBe(true);
   });
+
+  it('向 Agent 转发的会话 ID 按用户隔离且长度固定', async () => {
+    vi.mocked(requireUser).mockResolvedValue(makeUserCtx());
+    const chain = buildSupabaseChain(null);
+    chain.insert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        single: vi.fn().mockResolvedValue({
+          data: { id: 'qa-1', session_id: 'session-a' },
+          error: null,
+        }),
+      }),
+    });
+
+    const { POST } = await import('@/app/api/ai/chat/route');
+    const req = makeRequest('POST', 'http://localhost/api/ai/chat', {
+      question: '测试会话隔离',
+      sessionId: 'session-a',
+    });
+    await POST(req);
+
+    const requestInit = vi.mocked(fetch).mock.calls[0]?.[1];
+    const upstreamBody = JSON.parse(String(requestInit?.body)) as { session_id: string };
+    expect(upstreamBody.session_id).toHaveLength(64);
+    expect(upstreamBody.session_id).not.toBe('session-a');
+  });
 });
 
 // ---------------------------------------------------------------------------

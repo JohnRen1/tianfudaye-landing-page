@@ -1,41 +1,36 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeft,
-  BookOpen,
   Bot,
-  CalendarCheck,
+  ExternalLink,
+  Headphones,
   Loader2,
-  MessageCircle,
   Send,
-  ShieldAlert,
   Sparkles,
   User,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 import { LoginModal } from "./login-modal";
 import { sendMessageStream } from "@/lib/api/ai-chat";
-import type { AiAnswerBodyDTO, ChatMessageDTO } from "@/lib/contracts/ai-chat";
-import { hydrateClientAuthFromServer, isClientLoggedIn } from "@/lib/client-auth";
+import type { AiAnswerBodyDTO, AiChatRequestDTO, ChatMessageDTO } from "@/lib/contracts/ai-chat";
+import { getClientAuthToken, hydrateClientAuthFromServer, isClientLoggedIn } from "@/lib/client-auth";
 import { buildPathWithTracking } from "@/lib/tracking-context";
 
 const quickQuestions = [
-  "发票合规怎么判断？",
-  "公转私有什么风险？",
-  "长期零申报会被查吗？",
-  "收到税务检查通知怎么办？",
+  "员工退休，公司需要怎么处理？",
+  "我们能享受哪些税收优惠？",
+  "收到发票后应该怎么处理？",
+  "公转私一般有哪些税务风险？",
 ];
-const disclaimer =
-  "以上内容由 AI 根据现有知识库生成，仅供参考，不构成正式税务意见。具体处理方案需结合企业实际情况，并由专业税务顾问进一步确认。";
 const showAiDebug = process.env.NEXT_PUBLIC_AI_DEBUG === "true";
-const CHAT_STATE_STORAGE_KEY = "tax-ai-chat-state-v1";
+const CHAT_STATE_STORAGE_KEY_PREFIX = "tax-ai-chat-state-v1:";
 
 interface StoredChatState {
   messages: ChatMessageDTO[];
@@ -50,140 +45,62 @@ function isStoredChatState(value: unknown): value is StoredChatState {
   return Array.isArray(record.messages) && "sessionId" in record && typeof record.savedAt === "number";
 }
 
-function renderInlineMarkdown(text: string): ReactNode[] {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((part, index) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return (
-        <strong key={`${part}-${index}`} className="font-semibold text-foreground">
-          {part.slice(2, -2)}
-        </strong>
-      );
-    }
-    return <span key={`${part}-${index}`}>{part}</span>;
-  });
-}
-
 function MarkdownAnswer({ content }: { content: string }) {
-  const lines = content.split(/\r?\n/);
-  const blocks: ReactNode[] = [];
-  let listItems: string[] = [];
-  let orderedItems: string[] = [];
-  let paragraphLines: string[] = [];
-
-  const flushList = () => {
-    if (listItems.length === 0) return;
-    const items = listItems;
-    listItems = [];
-    blocks.push(
-      <ul key={`ul-${blocks.length}`} className="space-y-1 pl-4 text-muted-foreground">
-        {items.map((item, index) => (
-          <li key={`${item}-${index}`} className="list-disc leading-relaxed">
-            {renderInlineMarkdown(item)}
-          </li>
-        ))}
-      </ul>,
-    );
-  };
-
-  const flushOrderedList = () => {
-    if (orderedItems.length === 0) return;
-    const items = orderedItems;
-    orderedItems = [];
-    blocks.push(
-      <ol key={`ol-${blocks.length}`} className="space-y-1 pl-4 text-muted-foreground">
-        {items.map((item, index) => (
-          <li key={`${item}-${index}`} className="list-decimal leading-relaxed">
-            {renderInlineMarkdown(item)}
-          </li>
-        ))}
-      </ol>,
-    );
-  };
-
-  const flushParagraph = () => {
-    if (paragraphLines.length === 0) return;
-    const paragraph = paragraphLines.join(" ");
-    paragraphLines = [];
-    blocks.push(
-      <p key={`p-${blocks.length}`} className="leading-relaxed text-muted-foreground">
-        {renderInlineMarkdown(paragraph)}
-      </p>,
-    );
-  };
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-
-    if (!line) {
-      flushParagraph();
-      flushList();
-      flushOrderedList();
-      continue;
-    }
-
-    if (/^-{3,}$/.test(line)) {
-      flushParagraph();
-      flushList();
-      flushOrderedList();
-      blocks.push(<hr key={`hr-${blocks.length}`} className="border-border" />);
-      continue;
-    }
-
-    const headingMatch = /^(#{1,4})\s+(.+)$/.exec(line);
-    if (headingMatch) {
-      flushParagraph();
-      flushList();
-      flushOrderedList();
-      const level = headingMatch[1].length;
-      const className =
-        level <= 2
-          ? "pt-1 text-base font-semibold text-foreground"
-          : "pt-1 text-sm font-semibold text-foreground";
-      blocks.push(
-        <h4 key={`h-${blocks.length}`} className={className}>
-          {renderInlineMarkdown(headingMatch[2])}
-        </h4>,
-      );
-      continue;
-    }
-
-    const orderedMatch = /^\d+\.\s+(.+)$/.exec(line);
-    if (orderedMatch) {
-      flushParagraph();
-      flushList();
-      orderedItems.push(orderedMatch[1]);
-      continue;
-    }
-
-    const bulletMatch = /^[-*]\s+(.+)$/.exec(line);
-    if (bulletMatch) {
-      flushParagraph();
-      flushOrderedList();
-      listItems.push(bulletMatch[1]);
-      continue;
-    }
-
-    flushList();
-    flushOrderedList();
-    paragraphLines.push(line);
-  }
-
-  flushParagraph();
-  flushList();
-  flushOrderedList();
-
-  return <div className="max-w-full space-y-3 overflow-hidden break-words">{blocks}</div>;
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        h1: ({ children }) => <h3 className="pt-1 text-base font-semibold text-foreground">{children}</h3>,
+        h2: ({ children }) => <h3 className="pt-1 text-base font-semibold text-foreground">{children}</h3>,
+        h3: ({ children }) => <h4 className="pt-1 text-sm font-semibold text-foreground">{children}</h4>,
+        h4: ({ children }) => <h4 className="pt-1 text-sm font-semibold text-foreground">{children}</h4>,
+        p: ({ children }) => <p className="leading-relaxed text-muted-foreground">{children}</p>,
+        strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+        ul: ({ children }) => <ul className="list-disc space-y-1 pl-5 text-muted-foreground">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">{children}</ol>,
+        li: ({ children }) => <li className="pl-0.5 leading-relaxed">{children}</li>,
+        blockquote: ({ children }) => (
+          <blockquote className="border-l-2 border-primary/40 pl-3 text-muted-foreground">{children}</blockquote>
+        ),
+        hr: () => <hr className="border-border" />,
+        table: ({ children }) => (
+          <div className="max-w-full overflow-x-auto rounded-md border border-border">
+            <table className="w-full min-w-[480px] border-collapse text-left text-xs">{children}</table>
+          </div>
+        ),
+        thead: ({ children }) => <thead className="bg-muted text-foreground">{children}</thead>,
+        th: ({ children }) => <th className="border-b border-r border-border px-3 py-2 font-semibold last:border-r-0">{children}</th>,
+        td: ({ children }) => <td className="border-b border-r border-border px-3 py-2 align-top text-muted-foreground last:border-r-0">{children}</td>,
+        code: ({ children }) => (
+          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs text-foreground">{children}</code>
+        ),
+        a: ({ href, children }) =>
+          href?.startsWith("https://") ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-0.5 break-all font-medium text-primary underline underline-offset-2"
+            >
+              {children}
+              <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
+            </a>
+          ) : (
+            <span>{children}</span>
+          ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
 }
 
 function AiAnswerCard({
   answer,
-  onAppointmentClick,
-  onMaterialsClick,
+  onSupportClick,
 }: {
   answer: AiAnswerBodyDTO;
-  onAppointmentClick: () => void;
-  onMaterialsClick: () => void;
+  onSupportClick: () => void;
 }) {
   useEffect(() => {
     if (showAiDebug && answer.citations && answer.citations.length > 0) {
@@ -192,96 +109,22 @@ function AiAnswerCard({
   }, [answer.citations]);
 
   return (
-    <div className="max-w-full space-y-3 overflow-hidden">
-      <Card className="border-0 bg-card shadow-sm">
-        <CardContent className="p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10">
-              <Bot className="h-4 w-4 text-primary" />
-            </div>
-            <span className="text-sm font-semibold">AI 知识库回答</span>
-          </div>
-          <div className="space-y-3 text-sm">
-            {answer.answerText ? (
-              <section>
-                <h3 className="mb-1 font-semibold text-foreground">回答内容</h3>
-                <MarkdownAnswer content={answer.answerText} />
-              </section>
-            ) : (
-              <>
-                <section>
-                  <h3 className="mb-1 font-semibold text-foreground">问题理解</h3>
-                  <p className="leading-relaxed text-muted-foreground">{answer.questionUnderstanding}</p>
-                </section>
-                <section>
-                  <h3 className="mb-1 font-semibold text-foreground">初步判断</h3>
-                  <p className="leading-relaxed text-muted-foreground">{answer.initialJudgment}</p>
-                </section>
-                <section>
-                  <h3 className="mb-1 font-semibold text-foreground">涉及风险</h3>
-                  <ul className="space-y-1 text-muted-foreground">
-                    {answer.involvedRisks.map((item, idx) => (
-                      <li key={idx} className="flex gap-2">
-                        <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-destructive/70" />
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-                <section>
-                  <h3 className="mb-1 font-semibold text-foreground">处理建议</h3>
-                  <ul className="space-y-1 text-muted-foreground">
-                    {answer.suggestions.map((item, idx) => (
-                      <li key={idx} className="flex gap-2">
-                        <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-primary/70" />
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              </>
-            )}
-            <p className="rounded-xl bg-muted/70 p-3 text-xs leading-relaxed text-muted-foreground">
-              {disclaimer}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border-0 bg-card shadow-sm">
-        <CardContent className="space-y-3 p-4 text-sm">
-          <div className="flex items-center justify-between gap-3 rounded-xl bg-secondary/60 p-3">
-            <span className="text-muted-foreground">是否建议人工顾问介入</span>
-            <span className={cn("font-semibold", answer.advisorRecommended ? "text-destructive" : "text-primary")}>
-              {answer.advisorRecommended ? "建议介入" : "暂不需要"}
-            </span>
-          </div>
-          {answer.needsConfirmation && (
-            <div className="rounded-xl border border-warning/20 bg-warning/10 p-3 text-warning">
-              建议结合企业实际情况由顾问确认。
-            </div>
-          )}
-          {answer.advisorRecommended && (
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                onClick={onAppointmentClick}
-              >
-                <CalendarCheck className="mr-1.5 h-4 w-4" />
-                预约顾问解读
-              </Button>
-              <Button
-                variant="outline"
-                className="rounded-xl border-primary/20 text-primary"
-                onClick={onMaterialsClick}
-              >
-                <BookOpen className="mr-1.5 h-4 w-4" />
-                查看相关资料
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+    <div className="max-w-full space-y-3 rounded-2xl rounded-tl-sm bg-card px-4 py-3 text-sm shadow-sm">
+      <div className="max-w-full space-y-3 overflow-hidden break-words">
+        <MarkdownAnswer content={answer.answerText || answer.initialJudgment} />
+      </div>
+      <div className="border-t border-border pt-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2 text-xs text-primary"
+          onClick={onSupportClick}
+        >
+          <Headphones className="mr-1.5 h-3.5 w-3.5" />
+          联系人工客服
+        </Button>
+      </div>
     </div>
   );
 }
@@ -290,7 +133,7 @@ function AiLoadingCard() {
   return (
     <div className="flex items-center gap-2 rounded-2xl bg-card px-4 py-3 text-sm text-muted-foreground shadow-sm">
       <Loader2 className="h-4 w-4 animate-spin text-primary" />
-      正在检索知识库并生成回答...
+      正在思考...
     </div>
   );
 }
@@ -308,17 +151,21 @@ export function TaxAiAssistantPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isChatStateRestored, setIsChatStateRestored] = useState(false);
+  const [chatStateStorageKey, setChatStateStorageKey] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void hydrateClientAuthFromServer().then((loggedIn) => {
-      if (loggedIn) setIsLoggedIn(true);
+      setIsLoggedIn(loggedIn);
+      const token = getClientAuthToken();
+      setChatStateStorageKey(loggedIn && token ? `${CHAT_STATE_STORAGE_KEY_PREFIX}${token}` : null);
     });
   }, []);
 
   useEffect(() => {
-    const rawState = sessionStorage.getItem(CHAT_STATE_STORAGE_KEY);
+    if (chatStateStorageKey === null) return;
+    const rawState = sessionStorage.getItem(chatStateStorageKey);
     if (!rawState) {
       setIsChatStateRestored(true);
       return;
@@ -337,14 +184,14 @@ export function TaxAiAssistantPage() {
       setSessionId(parsed.sessionId);
       setInputValue(parsed.inputValue);
     } catch {
-      sessionStorage.removeItem(CHAT_STATE_STORAGE_KEY);
+      sessionStorage.removeItem(chatStateStorageKey);
     } finally {
       setIsChatStateRestored(true);
     }
-  }, []);
+  }, [chatStateStorageKey]);
 
   useEffect(() => {
-    if (!isChatStateRestored) return;
+    if (!isChatStateRestored || chatStateStorageKey === null) return;
 
     const completedMessages = messages.filter(
       (message) => message.role === "user" || message.answer !== null,
@@ -355,8 +202,8 @@ export function TaxAiAssistantPage() {
       inputValue,
       savedAt: Date.now(),
     };
-    sessionStorage.setItem(CHAT_STATE_STORAGE_KEY, JSON.stringify(storedState));
-  }, [inputValue, isChatStateRestored, messages, sessionId]);
+    sessionStorage.setItem(chatStateStorageKey, JSON.stringify(storedState));
+  }, [chatStateStorageKey, inputValue, isChatStateRestored, messages, sessionId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -368,31 +215,11 @@ export function TaxAiAssistantPage() {
     return false;
   };
 
-  const persistCurrentChatState = () => {
-    const completedMessages = messages.filter(
-      (message) => message.role === "user" || message.answer !== null,
-    );
-    const storedState: StoredChatState = {
-      messages: completedMessages,
-      sessionId,
-      inputValue,
-      savedAt: Date.now(),
-    };
-    sessionStorage.setItem(CHAT_STATE_STORAGE_KEY, JSON.stringify(storedState));
-  };
-
   const buildTrackedPath = (path: string) => buildPathWithTracking(path, searchParams);
-
-  const openAppointment = () => {
-    if (!requireLogin()) return;
-    persistCurrentChatState();
-    router.push(buildTrackedPath("/appointment"));
-  };
-
-  const openMaterials = () => {
-    if (!requireLogin()) return;
-    persistCurrentChatState();
-    router.push(buildTrackedPath("/materials"));
+  const openSupport = () => router.push(buildTrackedPath("/support"));
+  const restoreChatStateForCurrentUser = () => {
+    const token = getClientAuthToken();
+    setChatStateStorageKey(token ? `${CHAT_STATE_STORAGE_KEY_PREFIX}${token}` : null);
   };
 
   const submitQuestion = async (question: string) => {
@@ -413,7 +240,18 @@ export function TaxAiAssistantPage() {
 
     try {
       let streamedText = "";
-      await sendMessageStream(text, sessionId, activityId, {
+      const recentHistory: NonNullable<AiChatRequestDTO["recentHistory"]> = [];
+      for (const message of messages) {
+        if (message.role === "user") {
+          recentHistory.push({ role: "user", content: message.content });
+        } else if (message.answer) {
+          recentHistory.push({
+            role: "assistant",
+            content: message.answer.answerText || message.answer.initialJudgment,
+          });
+        }
+      }
+      await sendMessageStream(text, sessionId, activityId, recentHistory.slice(-10), {
         onDelta: (delta) => {
           streamedText += delta;
           setMessages((prev) =>
@@ -489,27 +327,17 @@ export function TaxAiAssistantPage() {
               <Sparkles className="h-7 w-7" />
             </div>
             <div className="min-w-0 flex-1">
-              <Badge className="mb-2 bg-accent text-accent-foreground hover:bg-accent/90">
-                知识库
-              </Badge>
-              <h1 className="text-2xl font-bold tracking-tight">AI 税务助手</h1>
+              <h1 className="text-2xl font-bold tracking-tight">AI 客服助手</h1>
             </div>
           </div>
 
           <p className="mt-4 max-w-[300px] text-sm leading-relaxed text-white/80">
-            基于财税知识库快速答疑，仅供参考，不构成正式税务意见
+            可以直接提问，也可以接着上一轮自然交流
           </p>
         </div>
       </header>
 
       <main className="min-w-0 flex-1 space-y-4 px-4 pb-36 pt-4">
-        <div className="rounded-2xl border border-destructive/20 bg-destructive/10 p-3 text-sm leading-relaxed text-destructive">
-          <div className="flex gap-2">
-            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-            涉及稽查、虚开发票、大额公转私等问题，建议预约顾问进一步确认。
-          </div>
-        </div>
-
         <section>
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-semibold">快捷问题</h2>
@@ -522,7 +350,6 @@ export function TaxAiAssistantPage() {
                 className="rounded-2xl border border-border bg-card p-3 text-left text-sm leading-snug shadow-sm transition hover:border-primary/30 hover:bg-primary/5"
                 onClick={() => submitQuestion(question)}
               >
-                <MessageCircle className="mb-2 h-4 w-4 text-primary" />
                 {question}
               </button>
             ))}
@@ -556,11 +383,7 @@ export function TaxAiAssistantPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   {message.answer ? (
-                    <AiAnswerCard
-                      answer={message.answer}
-                      onAppointmentClick={openAppointment}
-                      onMaterialsClick={openMaterials}
-                    />
+                    <AiAnswerCard answer={message.answer} onSupportClick={openSupport} />
                   ) : (
                     <AiLoadingCard />
                   )}
@@ -583,7 +406,7 @@ export function TaxAiAssistantPage() {
       <div className="fixed bottom-0 left-1/2 right-auto w-full max-w-[390px] -translate-x-1/2 border-t border-border bg-card/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-lg backdrop-blur">
         <div className="mx-auto flex max-w-[390px] gap-2">
           <Input
-            placeholder="请输入您的税务问题"
+            placeholder="请输入消息"
             value={inputValue}
             onChange={(event) => setInputValue(event.target.value)}
             onFocus={requireLogin}
@@ -603,14 +426,17 @@ export function TaxAiAssistantPage() {
         </div>
         <div className="mx-auto mt-2 flex max-w-[390px] items-center justify-center gap-1 text-xs text-muted-foreground">
           <AlertTriangle className="h-3.5 w-3.5" />
-          AI 回答仅供参考，高风险事项建议顾问确认
+          AI 可能出错，请核对重要信息
         </div>
       </div>
 
       <LoginModal
         open={showLoginModal}
         onOpenChange={setShowLoginModal}
-        onSuccess={() => setIsLoggedIn(true)}
+        onSuccess={() => {
+          setIsLoggedIn(true);
+          restoreChatStateForCurrentUser();
+        }}
       />
     </div>
   );

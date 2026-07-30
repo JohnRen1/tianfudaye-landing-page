@@ -131,6 +131,11 @@ export interface AiChatRequestDTO {
    * null 或不传 → 服务端创建新会话 id。
    */
   sessionId?: string | null;
+  /** 最近的对话消息；服务重启或会话内存丢失时用于恢复上下文。 */
+  recentHistory?: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+  }>;
   /**
    * 来源活动 id（可选，S2 归因）
    * 落地页从 URL 参数 ?activity_id= 读取后传入。
