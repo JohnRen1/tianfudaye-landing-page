@@ -26,6 +26,10 @@ import type { CheckinPageDTO } from "@/lib/contracts/checkin";
 import { CHECKIN_WINDOW_STATUS_LABEL } from "@/lib/contracts/checkin";
 import { ApiError } from "@/lib/api/client";
 
+function isSafeInternalPath(value: string | null): value is string {
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\"));
+}
+
 function CheckinContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -33,12 +37,13 @@ function CheckinContent() {
   const redirectPath = searchParams.get("redirect");
   const activityId = searchParams.get("activity_id") ?? searchParams.get("activity");
   const landingReturnPath = (() => {
-    if (redirectPath) return redirectPath;
+    if (isSafeInternalPath(redirectPath)) return redirectPath;
     const params = new URLSearchParams();
     if (qrId) params.set("qr_id", qrId);
     if (activityId) params.set("activity_id", activityId);
     return params.size > 0 ? `/?${params.toString()}` : "/";
   })();
+  const currentPath = `/checkin${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
 
   const [pageData, setPageData] = useState<CheckinPageDTO | null>(null);
   const [loading, setLoading] = useState(true);
@@ -146,6 +151,9 @@ function CheckinContent() {
           <RefreshCcw className="mr-2 h-4 w-4" />
           重新加载
         </Button>
+        <Button variant="ghost" className="h-11 rounded-xl" onClick={() => router.replace(landingReturnPath)}>
+          返回活动页
+        </Button>
       </div>
     );
   }
@@ -163,7 +171,7 @@ function CheckinContent() {
             variant="ghost"
             size="icon"
             className="mb-6 rounded-full text-white hover:bg-white/10"
-            onClick={() => router.push(landingReturnPath)}
+            onClick={() => router.replace(landingReturnPath)}
             aria-label="返回活动页"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -209,6 +217,7 @@ function CheckinContent() {
               const aiUrl = new URL('/tax-ai', window.location.origin);
               if (qrId) aiUrl.searchParams.set('qr_id', qrId);
               if (activityId) aiUrl.searchParams.set('activity_id', activityId);
+              aiUrl.searchParams.set('returnTo', currentPath);
               router.push(aiUrl.pathname + aiUrl.search);
             }}>
               <Sparkles className="mr-2 h-4 w-4" />AI税务助手
@@ -217,6 +226,7 @@ function CheckinContent() {
               const appointmentUrl = new URL('/appointment', window.location.origin);
               if (qrId) appointmentUrl.searchParams.set('qr_id', qrId);
               if (activityId) appointmentUrl.searchParams.set('activity_id', activityId);
+              appointmentUrl.searchParams.set('returnTo', currentPath);
               router.push(appointmentUrl.pathname + appointmentUrl.search);
             }}>
               <CalendarCheck className="mr-2 h-4 w-4" />预约顾问
@@ -237,7 +247,7 @@ function CheckinContent() {
           variant="ghost"
           size="icon"
           className="mb-5 rounded-full text-white hover:bg-white/10"
-          onClick={() => router.back()}
+          onClick={() => router.replace(landingReturnPath)}
           aria-label="返回"
         >
           <ArrowLeft className="h-5 w-5" />

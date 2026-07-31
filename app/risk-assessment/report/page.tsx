@@ -28,6 +28,10 @@ import type { RiskLevel } from "@/lib/contracts/shared";
 import { getClientAuthToken, hydrateClientAuthFromServer } from "@/lib/client-auth";
 import { buildPathWithTracking } from "@/lib/tracking-context";
 
+function isSafeInternalPath(value: string | null): value is string {
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\"));
+}
+
 // ---------------------------------------------------------------------------
 // Style helpers
 // ---------------------------------------------------------------------------
@@ -100,8 +104,18 @@ function RiskReportContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const reportId = searchParams.get("id") ?? "";
-  const appointmentBasePath = buildPathWithTracking("/appointment", searchParams);
   const landingPath = buildPathWithTracking("/", searchParams);
+  const requestedBackPath = searchParams.get("returnTo");
+  const reportBackPath = isSafeInternalPath(requestedBackPath) ? requestedBackPath : landingPath;
+  const currentPath = `/risk-assessment/report${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+  const appointmentUrl = new URL(buildPathWithTracking("/appointment", searchParams), "https://local.invalid");
+  appointmentUrl.searchParams.set("returnTo", currentPath);
+  const appointmentBasePath = `${appointmentUrl.pathname}${appointmentUrl.search}`;
+  const retryStartUrl = new URL(buildPathWithTracking("/risk-assessment", searchParams), "https://local.invalid");
+  retryStartUrl.searchParams.set("returnTo", reportBackPath);
+  const retryQuizUrl = new URL(buildPathWithTracking("/risk-assessment/quiz", searchParams), "https://local.invalid");
+  retryQuizUrl.searchParams.set("returnTo", `${retryStartUrl.pathname}${retryStartUrl.search}`);
+  const retryQuizPath = `${retryQuizUrl.pathname}${retryQuizUrl.search}`;
 
   // Remote state
   const [report, setReport] = useState<AssessmentReportPublicDTO | null>(null);
@@ -241,9 +255,16 @@ function RiskReportContent() {
         <Button
           variant="ghost"
           className="h-11 rounded-xl text-sm"
-          onClick={() => router.push("/risk-assessment/quiz")}
+          onClick={() => router.replace(retryQuizPath)}
         >
           重新测评
+        </Button>
+        <Button
+          variant="ghost"
+          className="h-11 rounded-xl text-sm"
+          onClick={() => router.replace(reportBackPath)}
+        >
+          返回活动页
         </Button>
       </div>
     );
@@ -277,7 +298,7 @@ function RiskReportContent() {
           variant="ghost"
           size="icon"
           className="mb-5 rounded-full text-white hover:bg-white/10 hover:text-white"
-          onClick={() => router.push(landingPath)}
+          onClick={() => router.replace(reportBackPath)}
           aria-label="返回落地页主页"
         >
           <ArrowLeft className="h-5 w-5" />

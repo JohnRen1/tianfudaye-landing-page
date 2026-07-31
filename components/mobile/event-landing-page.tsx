@@ -112,7 +112,19 @@ export function EventLandingPage({
 
   const withTrackingParams = (path: string) => {
     if (typeof window === "undefined") return path;
-    return buildPathWithTracking(path, new URL(window.location.href).searchParams);
+    const currentParams = new URL(window.location.href).searchParams;
+    const url = new URL(buildPathWithTracking(path, currentParams), window.location.origin);
+    const qrId = currentParams.get("qr_id") ?? currentParams.get("qr");
+    const activityId = currentParams.get("activity_id") ?? currentParams.get("activity") ?? eventData?.id;
+    if (qrId) url.searchParams.set("qr_id", qrId);
+    if (activityId) url.searchParams.set("activity_id", activityId);
+    return `${url.pathname}${url.search}`;
+  };
+
+  const withReturnToLanding = (path: string) => {
+    const target = new URL(withTrackingParams(path), window.location.origin);
+    target.searchParams.set("returnTo", withTrackingParams("/"));
+    return `${target.pathname}${target.search}`;
   };
 
   const requireLogin = (action: () => void) => {
@@ -125,7 +137,7 @@ export function EventLandingPage({
   };
 
   const goToProfileComplete = () => {
-    const redirect = `${window.location.pathname}${window.location.search}`;
+    const redirect = withTrackingParams("/");
     router.push(`/profile/complete?redirect=${encodeURIComponent(redirect)}`);
   };
 
@@ -390,7 +402,7 @@ export function EventLandingPage({
           {/* AI 税务助手 */}
           <Card
             className="cursor-pointer border-0 shadow-sm transition-all hover:shadow-md"
-            onClick={() => requireLogin(() => router.push(withTrackingParams("/tax-ai")))}
+            onClick={() => requireLogin(() => router.push(withReturnToLanding("/tax-ai")))}
           >
             <CardContent className="flex items-center gap-4 p-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80">
@@ -409,7 +421,7 @@ export function EventLandingPage({
           {/* 财税风险测评 */}
           <Card
             className="cursor-pointer border-0 shadow-sm transition-all hover:shadow-md"
-            onClick={() => requireLogin(() => router.push(withTrackingParams("/risk-assessment")))}
+            onClick={() => requireLogin(() => router.push(withReturnToLanding("/risk-assessment")))}
           >
             <CardContent className="flex items-center gap-4 p-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-warning to-warning/80">
@@ -428,7 +440,7 @@ export function EventLandingPage({
           {/* 资料领取 */}
           <Card
             className="cursor-pointer border-0 shadow-sm transition-all hover:shadow-md"
-            onClick={() => requireLogin(() => router.push(withTrackingParams("/materials")))}
+            onClick={() => requireLogin(() => router.push(withReturnToLanding("/materials")))}
           >
             <CardContent className="flex items-center gap-4 p-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
@@ -488,7 +500,7 @@ export function EventLandingPage({
           <Button
             variant="outline"
             className="flex-1"
-            onClick={() => requireLogin(() => router.push(withTrackingParams("/support")))}
+            onClick={() => requireLogin(() => router.push(withReturnToLanding("/support")))}
           >
             <MessageSquare className="mr-2 h-4 w-4" />
             咨询客服
@@ -496,7 +508,7 @@ export function EventLandingPage({
           {isGeneralLanding ? (
             <Button
               className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
-              onClick={() => requireLogin(() => router.push(withTrackingParams("/appointment")))}
+              onClick={() => requireLogin(() => router.push(withReturnToLanding("/appointment")))}
             >
               <Calendar className="mr-2 h-4 w-4" />
               预约顾问
@@ -535,7 +547,7 @@ export function EventLandingPage({
           ) : isActivityOver ? (
             <Button
               className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
-              onClick={() => requireLogin(() => router.push(withTrackingParams("/appointment")))}
+              onClick={() => requireLogin(() => router.push(withReturnToLanding("/appointment")))}
             >
               <Calendar className="mr-2 h-4 w-4" />
               预约顾问
@@ -544,7 +556,7 @@ export function EventLandingPage({
             <Button
               className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
               onClick={() => requireLogin(() => {
-                const base = withTrackingParams("/appointment");
+                const base = withReturnToLanding("/appointment");
                 const sep = base.includes("?") ? "&" : "?";
                 router.push(`${base}${sep}enroll=1`);
               })}

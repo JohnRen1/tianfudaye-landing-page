@@ -21,9 +21,21 @@ import { getQuestions, submitAssessment } from "@/lib/api/assessment";
 import type { QuestionPublicDTO } from "@/lib/contracts/assessment";
 import { buildPathWithTracking } from "@/lib/tracking-context";
 
+function isSafeInternalPath(value: string | null): value is string {
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\"));
+}
+
 export function RiskAssessmentQuizPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const fallbackStartPath = buildPathWithTracking("/risk-assessment", searchParams);
+  const requestedBackPath = searchParams.get("returnTo");
+  const backPath = isSafeInternalPath(requestedBackPath) ? requestedBackPath : fallbackStartPath;
+  const startUrl = new URL(backPath, "https://local.invalid");
+  const requestedLandingPath = startUrl.searchParams.get("returnTo");
+  const reportBackPath = isSafeInternalPath(requestedLandingPath)
+    ? requestedLandingPath
+    : buildPathWithTracking("/", searchParams);
 
   const urlQrId = searchParams.get("qr") ?? searchParams.get("qr_id");
   const urlActivityId = searchParams.get("activity") ?? searchParams.get("activity_id");
@@ -86,6 +98,9 @@ export function RiskAssessmentQuizPage() {
           <RefreshCcw className="mr-2 h-4 w-4" />
           重新加载
         </Button>
+        <Button variant="ghost" className="h-11 rounded-xl" onClick={() => router.replace(backPath)}>
+          返回测评首页
+        </Button>
       </div>
     );
   }
@@ -95,6 +110,9 @@ export function RiskAssessmentQuizPage() {
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-6 text-center">
         <AlertCircle className="h-10 w-10 text-muted-foreground" />
         <p className="text-sm text-muted-foreground">暂无题目，请稍后再试</p>
+        <Button variant="ghost" className="h-11 rounded-xl" onClick={() => router.replace(backPath)}>
+          返回测评首页
+        </Button>
       </div>
     );
   }
@@ -139,7 +157,12 @@ export function RiskAssessmentQuizPage() {
         selectedIndexes: answers[q.id] ?? [],
       }));
       const result = await submitAssessment(submitAnswers, sourceQrId, sourceActivityId);
-      router.push(buildPathWithTracking(`/risk-assessment/report?id=${result.reportId}`, searchParams));
+      const reportUrl = new URL(
+        buildPathWithTracking(`/risk-assessment/report?id=${result.reportId}`, searchParams),
+        "https://local.invalid",
+      );
+      reportUrl.searchParams.set("returnTo", reportBackPath);
+      router.push(`${reportUrl.pathname}${reportUrl.search}`);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "提交失败，请重试");
       setIsSubmitting(false);
@@ -154,7 +177,7 @@ export function RiskAssessmentQuizPage() {
             variant="ghost"
             size="icon"
             className="h-9 w-9 rounded-full"
-            onClick={() => router.push(buildPathWithTracking("/risk-assessment", searchParams))}
+            onClick={() => router.replace(backPath)}
             aria-label="返回测评起始页"
           >
             <ArrowLeft className="h-5 w-5" />

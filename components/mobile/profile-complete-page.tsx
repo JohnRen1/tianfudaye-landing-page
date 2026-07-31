@@ -32,7 +32,7 @@ const CONTACT_TIME_OPTIONS = [
 ];
 
 function getSafeRedirect(value: string | null): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) return "/materials";
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return "/materials";
   return value;
 }
 
@@ -55,7 +55,7 @@ export function ProfileCompletePage() {
     void hydrateClientAuthFromServer().then(async (loggedIn) => {
       if (!loggedIn) {
         const currentPath = `/profile/complete?redirect=${encodeURIComponent(redirectPath)}`;
-        router.replace(`/login?redirectPath=${encodeURIComponent(currentPath)}`);
+        router.replace(`/login?redirectPath=${encodeURIComponent(currentPath)}&returnTo=${encodeURIComponent(redirectPath)}`);
         return;
       }
 
@@ -114,7 +114,7 @@ export function ProfileCompletePage() {
       setSuccessToast(true);
       setTimeout(() => {
         // 用硬跳转强制页面完整重载，确保资料列表用最新 isProfileComplete 重新请求
-        window.location.href = redirectPath;
+        window.location.replace(redirectPath);
       }, 1000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "企业信息保存失败，请稍后重试");
@@ -133,7 +133,7 @@ export function ProfileCompletePage() {
             variant="ghost"
             size="icon"
             className="mb-6 rounded-full text-white hover:bg-white/10 hover:text-white"
-            onClick={() => router.back()}
+            onClick={() => router.replace(redirectPath)}
             aria-label="返回"
           >
             <ArrowLeft className="h-5 w-5" />

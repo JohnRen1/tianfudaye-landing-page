@@ -38,6 +38,10 @@ const faqs = [
   },
 ];
 
+function isSafeReturnPath(value: string | null): value is string {
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\"));
+}
+
 function SupportPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -49,6 +53,20 @@ function SupportPageContent() {
   const [openFaq, setOpenFaq] = useState<string | null>(faqs[0]?.question ?? null);
 
   const isMessagePhoneValid = messagePhone === "" || /^1[3-9]\d{9}$/.test(messagePhone);
+  const returnTo = searchParams.get("returnTo");
+  const backPath = isSafeReturnPath(returnTo) ? returnTo : buildPathWithTracking("/", searchParams);
+  const currentPath = `/support${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+
+  const navigateToService = (path: string) => {
+    const destination = new URL(buildPathWithTracking(path, searchParams), "https://local.invalid");
+    const source = new URL(backPath, "https://local.invalid");
+    if (destination.pathname === source.pathname) {
+      router.replace(backPath);
+      return;
+    }
+    destination.searchParams.set("returnTo", currentPath);
+    router.push(`${destination.pathname}${destination.search}`);
+  };
 
   const handleSubmitMessage = async () => {
     if (!messageContent.trim()) {
@@ -84,7 +102,7 @@ function SupportPageContent() {
     <div className="mx-auto min-h-screen max-w-[390px] bg-background pb-8">
       <div className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
         <div className="absolute -right-16 top-8 h-36 w-36 rounded-full bg-white/10" />
-        <Button variant="ghost" size="icon" className="mb-6 rounded-full text-white hover:bg-white/10 hover:text-white" onClick={() => router.push(buildPathWithTracking("/", searchParams))} aria-label="返回首页">
+        <Button variant="ghost" size="icon" className="mb-6 rounded-full text-white hover:bg-white/10 hover:text-white" onClick={() => router.replace(backPath)} aria-label="返回">
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex items-center gap-3">
@@ -147,7 +165,7 @@ function SupportPageContent() {
                       <Button
                         variant="outline"
                         className="mt-3 h-9 rounded-xl border-primary/20 px-3 text-primary"
-                        onClick={() => router.push(buildPathWithTracking(faq.href, searchParams))}
+                        onClick={() => navigateToService(faq.href)}
                       >
                         {faq.action}
                       </Button>
@@ -207,10 +225,10 @@ function SupportPageContent() {
         </Card>
 
         <div className="grid grid-cols-2 gap-3">
-          <Button variant="outline" className="h-12 rounded-xl" onClick={() => router.push(buildPathWithTracking("/tax-ai", searchParams))}>
+          <Button variant="outline" className="h-12 rounded-xl" onClick={() => navigateToService("/tax-ai")}>
             <Bot className="mr-2 h-4 w-4" />AI税务助手
           </Button>
-          <Button className="h-12 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.push(buildPathWithTracking("/appointment", searchParams))}>
+          <Button className="h-12 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => navigateToService("/appointment")}>
             <CalendarCheck className="mr-2 h-4 w-4" />预约顾问
           </Button>
         </div>

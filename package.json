@@ -5,6 +5,10 @@
   "packageManager": "pnpm@11.5.0",
   "scripts": {
     "dev": "next dev",
+    "tax-ai:up": "bash scripts/local-tax-ai.sh start",
+    "tax-ai:down": "bash scripts/local-tax-ai.sh stop",
+    "tax-ai:status": "bash scripts/local-tax-ai.sh status",
+    "tax-ai:logs": "bash scripts/local-tax-ai.sh logs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",

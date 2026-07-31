@@ -49,7 +49,7 @@ function getCurrentAuthContext(): { sourceQrId?: string; sourceActivityId?: stri
   const sourceActivityId = currentUrl.searchParams.get("activity_id") ?? currentUrl.searchParams.get("activity") ?? undefined;
   const configuredRedirect = currentUrl.searchParams.get("redirectPath") ?? currentUrl.searchParams.get("redirect");
 
-  if (configuredRedirect?.startsWith("/") && !configuredRedirect.startsWith("//")) {
+  if (configuredRedirect?.startsWith("/") && !configuredRedirect.startsWith("//") && !configuredRedirect.includes("\\")) {
     return { sourceQrId, sourceActivityId, redirectPath: configuredRedirect };
   }
 

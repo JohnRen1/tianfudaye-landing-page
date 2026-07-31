@@ -47,6 +47,10 @@ const dimensions = [
   { title: "税务稽查应对", icon: Siren, color: "bg-destructive/10 text-destructive" },
 ];
 
+function isSafeInternalPath(value: string | null): value is string {
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\"));
+}
+
 export function RiskAssessmentStartPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -56,7 +60,15 @@ export function RiskAssessmentStartPage() {
     void hydrateClientAuthFromServer();
   }, []);
 
-  const buildQuizPath = () => buildPathWithTracking("/risk-assessment/quiz", searchParams);
+  const fallbackBackPath = buildPathWithTracking("/", searchParams);
+  const requestedBackPath = searchParams.get("returnTo");
+  const backPath = isSafeInternalPath(requestedBackPath) ? requestedBackPath : fallbackBackPath;
+  const currentPath = `/risk-assessment${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+  const buildQuizPath = () => {
+    const url = new URL(buildPathWithTracking("/risk-assessment/quiz", searchParams), "https://local.invalid");
+    url.searchParams.set("returnTo", currentPath);
+    return `${url.pathname}${url.search}`;
+  };
 
   const startAssessment = () => {
     if (!isClientLoggedIn()) {
@@ -67,11 +79,7 @@ export function RiskAssessmentStartPage() {
   };
 
   const handleBack = () => {
-    if (window.history.length > 1) {
-      router.back();
-      return;
-    }
-    router.push(buildPathWithTracking("/", searchParams));
+    router.replace(backPath);
   };
 
   return (

@@ -61,9 +61,16 @@ function formatFileSize(bytes: number | null): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+function isSafeInternalPath(value: string | null): value is string {
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\"));
+}
+
 export function MaterialsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const fallbackBackPath = buildPathWithTracking("/", searchParams);
+  const requestedBackPath = searchParams.get("returnTo");
+  const backPath = isSafeInternalPath(requestedBackPath) ? requestedBackPath : fallbackBackPath;
 
   const urlActivityId = searchParams.get("activity") ?? searchParams.get("activity_id");
   const [activityId] = useState<string | null>(urlActivityId ?? null);
@@ -153,11 +160,7 @@ export function MaterialsPage() {
   };
 
   const handleBack = () => {
-    if (window.history.length > 1) {
-      router.back();
-      return;
-    }
-    router.push(buildPathWithTracking("/", searchParams));
+    router.replace(backPath);
   };
 
   return (

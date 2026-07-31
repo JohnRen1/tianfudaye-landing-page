@@ -17,12 +17,16 @@ export function LoginPage({ onBack, onSuccess }: LoginPageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectPath = searchParams.get("redirectPath") ?? searchParams.get("redirect") ?? "/";
+  const requestedReturnPath = searchParams.get("returnTo");
+  const returnPath = requestedReturnPath?.startsWith("/") && !requestedReturnPath.startsWith("//") && !requestedReturnPath.includes("\\")
+    ? requestedReturnPath
+    : "/";
 
   useEffect(() => {
     void hydrateClientAuthFromServer().then((loggedIn) => {
       if (loggedIn) {
         onSuccess?.();
-        router.replace(redirectPath.startsWith("/") && !redirectPath.startsWith("//") ? redirectPath : "/");
+        router.replace(redirectPath.startsWith("/") && !redirectPath.startsWith("//") && !redirectPath.includes("\\") ? redirectPath : "/");
       }
     });
   }, [onSuccess, redirectPath, router]);
@@ -39,7 +43,7 @@ export function LoginPage({ onBack, onSuccess }: LoginPageProps) {
             variant="ghost"
             size="icon"
             className="rounded-full text-white hover:bg-white/10 hover:text-white"
-            onClick={onBack}
+            onClick={onBack ?? (() => router.replace(returnPath))}
             aria-label="返回"
           >
             <ArrowLeft className="h-5 w-5" />

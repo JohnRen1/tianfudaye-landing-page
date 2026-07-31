@@ -22,6 +22,10 @@ const enrollPurposes = ["学习税务合规知识", "了解最新政策动态", 
 const industries = ["制造业", "批发零售", "互联网/科技服务", "建筑工程", "餐饮服务", "贸易进出口", "专业服务", "其他"];
 const contactTimes = ["工作日上午", "工作日下午", "工作日晚上", "周末", "均可"];
 
+function isSafeInternalPath(value: string | null): value is string {
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\"));
+}
+
 // 中文标签 → AppointmentTopic 枚举值的反向映射
 const TOPIC_LABEL_TO_ENUM = Object.fromEntries(
   Object.entries(APPOINTMENT_TOPIC_LABEL).map(([enumValue, label]) => [label, enumValue as AppointmentTopic]),
@@ -175,7 +179,20 @@ function AppointmentForm() {
   };
 
   const activityLandingPath = buildPathWithTracking("/", searchParams);
-  const taxAiPath = buildPathWithTracking("/tax-ai", searchParams);
+  const requestedBackPath = searchParams.get("returnTo");
+  const backPath = isSafeInternalPath(requestedBackPath) ? requestedBackPath : activityLandingPath;
+  const hasExplicitBackPath = backPath !== activityLandingPath;
+  const currentPath = `/appointment${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+  const buildReturnablePath = (path: string, returnTo: string) => {
+    const url = new URL(buildPathWithTracking(path, searchParams), "https://local.invalid");
+    url.searchParams.set("returnTo", returnTo);
+    return `${url.pathname}${url.search}`;
+  };
+  const myAppointmentsPath = buildReturnablePath("/appointment/my", currentPath);
+  const backUrl = new URL(backPath, "https://local.invalid");
+  const taxAiPath = backUrl.pathname === "/tax-ai"
+    ? backPath
+    : buildReturnablePath("/tax-ai", activityLandingPath);
 
   if (submitted) {
     return (
@@ -190,9 +207,9 @@ function AppointmentForm() {
               {isEnrollMode ? "报名已提交，顾问将在 1 个工作日内与您确认参会详情。" : "预约提交成功，顾问将在 1 个工作日内联系您。"}
             </p>
             <div className="mt-6 w-full space-y-3">
-              <Button className="h-12 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.push(activityLandingPath)}>{isEnrollMode ? "返回活动页" : "返回首页"}</Button>
-              <Button variant="outline" className="h-12 w-full rounded-xl" onClick={() => router.push("/appointment/my")}>查看我的预约</Button>
-              <Button variant="outline" className="h-12 w-full rounded-xl border-primary/20 text-primary" onClick={() => router.push(taxAiPath)}>继续问 AI</Button>
+              <Button className="h-12 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.replace(backPath)}>{hasExplicitBackPath ? "返回上一页" : isEnrollMode ? "返回活动页" : "返回首页"}</Button>
+              <Button variant="outline" className="h-12 w-full rounded-xl" onClick={() => router.push(myAppointmentsPath)}>查看我的预约</Button>
+              <Button variant="outline" className="h-12 w-full rounded-xl border-primary/20 text-primary" onClick={() => router.replace(taxAiPath)}>继续问 AI</Button>
             </div>
           </CardContent>
         </Card>
@@ -204,7 +221,7 @@ function AppointmentForm() {
     <div className="mx-auto min-h-screen max-w-[390px] bg-background pb-44">
       <div className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
         <div className="absolute -right-16 top-8 h-36 w-36 rounded-full bg-white/10" />
-        <Button variant="ghost" size="icon" className="mb-6 rounded-full text-white hover:bg-white/10 hover:text-white" onClick={() => router.back()} aria-label="返回">
+        <Button variant="ghost" size="icon" className="mb-6 rounded-full text-white hover:bg-white/10 hover:text-white" onClick={() => router.replace(backPath)} aria-label="返回">
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex items-center gap-3">
@@ -365,7 +382,7 @@ function AppointmentForm() {
           <Button
             variant="outline"
             className="h-10 w-full rounded-xl text-sm"
-            onClick={() => router.push("/appointment/my")}
+            onClick={() => router.push(myAppointmentsPath)}
           >
             <CalendarCheck className="mr-2 h-4 w-4" />
             我的预约

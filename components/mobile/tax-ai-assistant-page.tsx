@@ -22,6 +22,10 @@ import { sendMessageStream } from "@/lib/api/ai-chat";
 import type { AiAnswerBodyDTO, AiChatRequestDTO, ChatMessageDTO } from "@/lib/contracts/ai-chat";
 import { getClientAuthToken, hydrateClientAuthFromServer, isClientLoggedIn } from "@/lib/client-auth";
 import { buildPathWithTracking } from "@/lib/tracking-context";
+import {
+  CHAT_STATE_STORAGE_KEY_PREFIX,
+  getChatStateStorageKey,
+} from "./tax-ai-chat-state";
 
 const quickQuestions = [
   "员工退休，公司需要怎么处理？",
@@ -30,7 +34,10 @@ const quickQuestions = [
   "公转私一般有哪些税务风险？",
 ];
 const showAiDebug = process.env.NEXT_PUBLIC_AI_DEBUG === "true";
-const CHAT_STATE_STORAGE_KEY_PREFIX = "tax-ai-chat-state-v1:";
+
+function isSafeInternalPath(value: string | null): value is string {
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\"));
+}
 
 interface StoredChatState {
   messages: ChatMessageDTO[];
@@ -42,7 +49,78 @@ interface StoredChatState {
 function isStoredChatState(value: unknown): value is StoredChatState {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
-  return Array.isArray(record.messages) && "sessionId" in record && typeof record.savedAt === "number";
+  return (
+    Array.isArray(record.messages) &&
+    "sessionId" in record &&
+    typeof record.inputValue === "string" &&
+    typeof record.savedAt === "number"
+  );
+}
+
+function getStoredChatState(storageKey: string): StoredChatState | null {
+  const rawState = sessionStorage.getItem(storageKey);
+  if (!rawState) return null;
+
+  try {
+    const parsed: unknown = JSON.parse(rawState);
+    return isStoredChatState(parsed) ? parsed : null;
+  } catch {
+    sessionStorage.removeItem(storageKey);
+    return null;
+  }
+}
+
+function findLegacyChatState(token: string | null): StoredChatState | null {
+  if (!token) return null;
+
+  let userId: string;
+  try {
+    const decodedToken = atob(token);
+    const separatorIndex = decodedToken.lastIndexOf(":");
+    userId = decodedToken.slice(0, separatorIndex);
+    if (separatorIndex <= 0 || userId.length < 10) return null;
+  } catch {
+    return null;
+  }
+
+  const candidates = Object.keys(sessionStorage)
+    .filter((key) => {
+      if (!key.startsWith(CHAT_STATE_STORAGE_KEY_PREFIX)) return false;
+      const legacyToken = key.slice(CHAT_STATE_STORAGE_KEY_PREFIX.length);
+      try {
+        const decodedLegacyToken = atob(legacyToken);
+        return decodedLegacyToken.startsWith(`${userId}:`);
+      } catch {
+        return false;
+      }
+    })
+    .map(getStoredChatState)
+    .filter((state): state is StoredChatState => state !== null);
+
+  const meaningfulCandidates = candidates.filter(
+    (state) => state.messages.length > 0 || state.inputValue.trim().length > 0 || state.sessionId !== null,
+  );
+  return (meaningfulCandidates.length > 0 ? meaningfulCandidates : candidates).sort(
+    (left, right) => right.savedAt - left.savedAt,
+  )[0] ?? null;
+}
+
+function persistChatState(
+  storageKey: string,
+  messages: ChatMessageDTO[],
+  sessionId: string | null,
+  inputValue: string,
+): void {
+  const completedMessages = messages.filter(
+    (message) => message.role === "user" || message.answer !== null,
+  );
+  const storedState: StoredChatState = {
+    messages: completedMessages,
+    sessionId,
+    inputValue,
+    savedAt: Date.now(),
+  };
+  sessionStorage.setItem(storageKey, JSON.stringify(storedState));
 }
 
 function MarkdownAnswer({ content }: { content: string }) {
@@ -159,50 +237,32 @@ export function TaxAiAssistantPage() {
     void hydrateClientAuthFromServer().then((loggedIn) => {
       setIsLoggedIn(loggedIn);
       const token = getClientAuthToken();
-      setChatStateStorageKey(loggedIn && token ? `${CHAT_STATE_STORAGE_KEY_PREFIX}${token}` : null);
+      setChatStateStorageKey(loggedIn ? getChatStateStorageKey(token) : null);
     });
   }, []);
 
   useEffect(() => {
     if (chatStateStorageKey === null) return;
-    const rawState = sessionStorage.getItem(chatStateStorageKey);
-    if (!rawState) {
+    const storedState =
+      getStoredChatState(chatStateStorageKey) ?? findLegacyChatState(getClientAuthToken());
+    if (!storedState) {
       setIsChatStateRestored(true);
       return;
     }
 
-    try {
-      const parsed: unknown = JSON.parse(rawState);
-      if (!isStoredChatState(parsed)) {
-        setIsChatStateRestored(true);
-        return;
-      }
-      const completedMessages = parsed.messages.filter(
-        (message) => message.role === "user" || message.answer !== null,
-      );
-      setMessages(completedMessages);
-      setSessionId(parsed.sessionId);
-      setInputValue(parsed.inputValue);
-    } catch {
-      sessionStorage.removeItem(chatStateStorageKey);
-    } finally {
-      setIsChatStateRestored(true);
-    }
+    const completedMessages = storedState.messages.filter(
+      (message) => message.role === "user" || message.answer !== null,
+    );
+    setMessages(completedMessages);
+    setSessionId(storedState.sessionId);
+    setInputValue(storedState.inputValue);
+    sessionStorage.setItem(chatStateStorageKey, JSON.stringify(storedState));
+    setIsChatStateRestored(true);
   }, [chatStateStorageKey]);
 
   useEffect(() => {
     if (!isChatStateRestored || chatStateStorageKey === null) return;
-
-    const completedMessages = messages.filter(
-      (message) => message.role === "user" || message.answer !== null,
-    );
-    const storedState: StoredChatState = {
-      messages: completedMessages,
-      sessionId,
-      inputValue,
-      savedAt: Date.now(),
-    };
-    sessionStorage.setItem(chatStateStorageKey, JSON.stringify(storedState));
+    persistChatState(chatStateStorageKey, messages, sessionId, inputValue);
   }, [chatStateStorageKey, inputValue, isChatStateRestored, messages, sessionId]);
 
   useEffect(() => {
@@ -216,10 +276,21 @@ export function TaxAiAssistantPage() {
   };
 
   const buildTrackedPath = (path: string) => buildPathWithTracking(path, searchParams);
-  const openSupport = () => router.push(buildTrackedPath("/support"));
+  const fallbackBackPath = buildTrackedPath("/");
+  const requestedBackPath = searchParams.get("returnTo");
+  const backPath = isSafeInternalPath(requestedBackPath) ? requestedBackPath : fallbackBackPath;
+  const currentPath = `/tax-ai${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+  const openSupport = () => {
+    if (chatStateStorageKey !== null) {
+      persistChatState(chatStateStorageKey, messages, sessionId, inputValue);
+    }
+    const supportUrl = new URL(buildTrackedPath("/support"), "https://local.invalid");
+    supportUrl.searchParams.set("returnTo", currentPath);
+    router.push(`${supportUrl.pathname}${supportUrl.search}`);
+  };
   const restoreChatStateForCurrentUser = () => {
     const token = getClientAuthToken();
-    setChatStateStorageKey(token ? `${CHAT_STATE_STORAGE_KEY_PREFIX}${token}` : null);
+    setChatStateStorageKey(getChatStateStorageKey(token));
   };
 
   const submitQuestion = async (question: string) => {
@@ -298,11 +369,7 @@ export function TaxAiAssistantPage() {
   };
 
   const handleBack = () => {
-    if (window.history.length > 1) {
-      router.back();
-      return;
-    }
-    router.push(buildTrackedPath("/"));
+    router.replace(backPath);
   };
 
   return (

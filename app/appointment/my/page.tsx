@@ -26,6 +26,10 @@ import {
 import { hydrateClientAuthFromServer } from "@/lib/client-auth";
 import { buildPathWithTracking } from "@/lib/tracking-context";
 
+function isSafeInternalPath(value: string | null): value is string {
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\"));
+}
+
 function getStatusTone(status: AppointmentStatus) {
   switch (status) {
     case "confirmed":
@@ -50,6 +54,13 @@ function formatDateTime(value: string | null | undefined) {
 function AppointmentMyPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const fallbackBackPath = buildPathWithTracking("/", searchParams);
+  const requestedBackPath = searchParams.get("returnTo");
+  const backPath = isSafeInternalPath(requestedBackPath) ? requestedBackPath : fallbackBackPath;
+  const appointmentUrl = new URL(buildPathWithTracking("/appointment", searchParams), "https://local.invalid");
+  appointmentUrl.searchParams.set("returnTo", backPath);
+  const appointmentPath = `${appointmentUrl.pathname}${appointmentUrl.search}`;
+  const currentPath = `/appointment/my${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
   const [items, setItems] = useState<AppointmentMySummaryDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +70,10 @@ function AppointmentMyPageContent() {
       try {
         const loggedIn = await hydrateClientAuthFromServer();
         if (!loggedIn) {
-          router.replace("/login");
+          const loginUrl = new URL("/login", "https://local.invalid");
+          loginUrl.searchParams.set("redirectPath", currentPath);
+          loginUrl.searchParams.set("returnTo", backPath);
+          router.replace(`${loginUrl.pathname}${loginUrl.search}`);
           return;
         }
         const data = await getMyAppointments();
@@ -72,7 +86,7 @@ function AppointmentMyPageContent() {
     }
 
     void load();
-  }, [router]);
+  }, [backPath, currentPath, router]);
 
   return (
     <div className="mx-auto min-h-screen max-w-[390px] bg-background pb-24">
@@ -82,7 +96,7 @@ function AppointmentMyPageContent() {
           variant="ghost"
           size="icon"
           className="mb-6 rounded-full text-white hover:bg-white/10 hover:text-white"
-          onClick={() => router.back()}
+          onClick={() => router.replace(backPath)}
           aria-label="返回"
         >
           <ArrowLeft className="h-5 w-5" />
@@ -118,7 +132,7 @@ function AppointmentMyPageContent() {
               <div className="flex min-h-[240px] flex-col items-center justify-center gap-3 text-center">
                 <CalendarCheck className="h-8 w-8 text-primary" />
                 <p className="text-sm text-muted-foreground">当前还没有预约记录，先去提交一次预约吧。</p>
-                <Button className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.push(buildPathWithTracking("/appointment", searchParams))}>
+                <Button className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => router.replace(appointmentPath)}>
                   预约顾问
                 </Button>
               </div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Building2, Clock, ClipboardList, Loader2, MessageCircle, Send, User, Vote } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,7 @@ import { getHomepageSurveyActive, submitHomepageSurvey } from "@/lib/api/homepag
 import { me } from "@/lib/api/auth";
 import { hydrateClientAuthFromServer } from "@/lib/client-auth";
 import type { HomepageSurveyPublicConfigDTO } from "@/lib/contracts/homepage-survey";
+import { buildPathWithTracking } from "@/lib/tracking-context";
 
 type FormState = {
   name: string;
@@ -103,6 +104,11 @@ function readSourceQrId(): string | undefined {
 
 export function HomepageSurveyPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedBackPath = searchParams.get("returnTo");
+  const backPath = requestedBackPath?.startsWith("/") && !requestedBackPath.startsWith("//") && !requestedBackPath.includes("\\")
+    ? requestedBackPath
+    : buildPathWithTracking("/", searchParams);
   const [config, setConfig] = useState<HomepageSurveyPublicConfigDTO>(defaultSurveyConfig);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [syncing, setSyncing] = useState(false);
@@ -201,7 +207,7 @@ export function HomepageSurveyPage() {
     <main className="mx-auto min-h-screen max-w-[390px] bg-background pb-8">
       <section className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
           <div className="absolute -right-16 top-8 h-36 w-36 rounded-full bg-white/10" />
-          <Button variant="ghost" size="icon" className="relative mb-6 rounded-full text-white hover:bg-white/10 hover:text-white" onClick={() => router.back()} aria-label="返回">
+          <Button variant="ghost" size="icon" className="relative mb-6 rounded-full text-white hover:bg-white/10 hover:text-white" onClick={() => router.replace(backPath)} aria-label="返回">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="relative flex items-center gap-3">
