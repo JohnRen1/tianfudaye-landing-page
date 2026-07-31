@@ -444,7 +444,7 @@ export function TaxAiAssistantPage() {
                 </div>
               </div>
             ) : (
-              <div key={message.id} className="flex min-w-0 gap-2 overflow-hidden">
+              <div key={message.id} className="-ml-2 flex min-w-0 gap-1.5 overflow-hidden">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
                   <Bot className="h-4 w-4 text-primary" />
                 </div>
@@ -459,7 +459,7 @@ export function TaxAiAssistantPage() {
             ),
           )}
           {isThinking && messages.at(-1)?.role !== "ai" && (
-            <div className="flex gap-2">
+            <div className="-ml-2 flex gap-1.5">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
                 <Bot className="h-4 w-4 text-primary" />
               </div>
