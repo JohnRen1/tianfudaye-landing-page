@@ -115,7 +115,11 @@ export async function POST(req: NextRequest) {
   const submittedCompany = normalizeString(company);
   const submittedIndustry = normalizeString(industry);
   const submittedContactTime = normalizeString(contactTime);
-  const snapshotName = submittedName || normalizeString(userRow.name) || normalizeString(user.name);
+  const snapshotName =
+    submittedName ||
+    normalizeString(userRow.name) ||
+    normalizeString(user.name) ||
+    (isMessageType ? '留言用户' : '');
   const snapshotPhone = submittedPhone || normalizeString(userRow.phone) || normalizeString(user.phone);
 
   if (!snapshotName && !isMessageType) {

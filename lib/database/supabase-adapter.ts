@@ -653,15 +653,16 @@ export async function createAppointment(params: {
   const appointmentId = newAppointment.id as string;
   logAssessmentDb('appointment insert success', { appointmentId });
 
-  await serviceClient
-    .from('users')
-    .update({
-      name: params.userName,
-      company: typeof params.body.company === 'string' ? params.body.company.trim() : null,
-      industry: typeof params.body.industry === 'string' ? params.body.industry.trim() : null,
-      active_at: new Date().toISOString(),
-    })
-    .eq('id', params.userId);
+  const isMessageType = params.body.appointmentType === 'message';
+  const userUpdate: Record<string, unknown> = {
+    active_at: new Date().toISOString(),
+  };
+  if (!isMessageType) {
+    userUpdate.name = params.userName;
+    userUpdate.company = typeof params.body.company === 'string' ? params.body.company.trim() : null;
+    userUpdate.industry = typeof params.body.industry === 'string' ? params.body.industry.trim() : null;
+  }
+  await serviceClient.from('users').update(userUpdate).eq('id', params.userId);
 
   let leadId: string | null = null;
 

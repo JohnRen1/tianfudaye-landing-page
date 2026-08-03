@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { ArrowLeft, AlertCircle, Bot, CalendarCheck, CheckCircle2, ChevronDown, Clock, Headphones, MessageCircle, Phone, Send, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { submitAppointment } from "@/lib/api/appointments";
 import { buildPathWithTracking } from "@/lib/tracking-context";
+import { hydrateClientAuthFromServer } from "@/lib/client-auth";
 
 const faqs = [
   {
@@ -52,7 +53,13 @@ function SupportPageContent() {
   const [messageContent, setMessageContent] = useState("");
   const [openFaq, setOpenFaq] = useState<string | null>(faqs[0]?.question ?? null);
 
+  useEffect(() => {
+    hydrateClientAuthFromServer().catch(() => {});
+  }, []);
+
   const isMessagePhoneValid = messagePhone === "" || /^1[3-9]\d{9}$/.test(messagePhone);
+  const urlQrId = searchParams.get("qr") ?? searchParams.get("qr_id");
+  const urlActivityId = searchParams.get("activity") ?? searchParams.get("activity_id");
   const returnTo = searchParams.get("returnTo");
   const backPath = isSafeReturnPath(returnTo) ? returnTo : buildPathWithTracking("/", searchParams);
   const currentPath = `/support${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
@@ -69,12 +76,16 @@ function SupportPageContent() {
   };
 
   const handleSubmitMessage = async () => {
-    if (!messageContent.trim()) {
-      setSubmitError("请填写问题描述");
+    if (!messagePhone.trim()) {
+      setSubmitError("请填写手机号，方便客服联系您");
       return;
     }
-    if (messagePhone && !/^1[3-9]\d{9}$/.test(messagePhone)) {
+    if (!/^1[3-9]\d{9}$/.test(messagePhone)) {
       setSubmitError("手机号格式不正确，请输入 11 位手机号");
+      return;
+    }
+    if (!messageContent.trim()) {
+      setSubmitError("请填写问题描述");
       return;
     }
     setSubmitting(true);
@@ -82,13 +93,15 @@ function SupportPageContent() {
     try {
       await submitAppointment({
         name: "",
-        phone: messagePhone.trim() || "",
+        phone: messagePhone.trim(),
         topic: "other",
         description: messageContent.trim(),
         company: "",
         industry: "",
         contactTime: "",
         appointmentType: "message",
+        ...(urlQrId && { sourceQrId: urlQrId }),
+        ...(urlActivityId && { sourceActivityId: urlActivityId }),
       });
       setSubmitted(true);
     } catch (err) {
@@ -193,7 +206,7 @@ function SupportPageContent() {
               <>
                 <Input
                   className={`h-12 rounded-xl${!isMessagePhoneValid ? " border-destructive" : ""}`}
-                  placeholder="手机号，方便客服联系（选填）"
+                  placeholder="手机号，方便客服联系您"
                   type="tel"
                   inputMode="numeric"
                   value={messagePhone}
@@ -213,7 +226,7 @@ function SupportPageContent() {
                 )}
                 <Button
                   className="h-11 w-full rounded-xl bg-accent text-accent-foreground hover:bg-accent/90"
-                  disabled={submitting || !messageContent.trim()}
+                  disabled={submitting || !messageContent.trim() || !messagePhone.trim()}
                   onClick={() => void handleSubmitMessage()}
                 >
                   <Send className="mr-2 h-4 w-4" />
