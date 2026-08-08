@@ -15,7 +15,8 @@ import { NextRequest } from 'next/server';
 // ---------------------------------------------------------------------------
 
 const mockFrom = vi.fn();
-const mockServiceClient = { from: mockFrom };
+const mockRpc = vi.fn();
+const mockServiceClient = { from: mockFrom, rpc: mockRpc };
 vi.mock('@/lib/supabase', () => ({
   createServiceClient: () => mockServiceClient,
   supabase: mockServiceClient,
@@ -92,6 +93,7 @@ function buildSupabaseChain(result: unknown) {
 describe('POST /api/auth/send-code', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRpc.mockResolvedValue({ data: null, error: null });
   });
 
   it('手机号格式错误时返回 400', async () => {
@@ -384,21 +386,62 @@ describe('GET /api/activities/[id]/landing', () => {
   });
 
   it('已发布活动返回活动信息', async () => {
-    const chain = buildSupabaseChain(null);
-    chain.single = vi.fn().mockResolvedValue({
-      data: {
-        id: 'act-1',
-        name: '金税四期风险识别专题课',
-        start_at: '2026-06-15T14:00:00Z',
-        end_at: '2026-06-15T17:00:00Z',
-        place: '上海静安区',
-        teacher: '王老师',
-        speaker_title: '资深税务顾问',
-        description: '本次沙龙将深度解析金税四期...',
-        cover_image: null,
-        status: 'published',
-      },
-      error: null,
+    mockFrom.mockImplementation((table: string) => {
+      const chain: Record<string, unknown> = {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        neq: vi.fn().mockReturnThis(),
+        ilike: vi.fn().mockReturnThis(),
+        in: vi.fn().mockReturnThis(),
+        is: vi.fn().mockReturnThis(),
+        gt: vi.fn().mockReturnThis(),
+        range: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        single: vi.fn(),
+        insert: vi.fn().mockReturnThis(),
+        update: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn(),
+      };
+
+      if (table === 'activities') {
+        (chain.single as ReturnType<typeof vi.fn>).mockResolvedValue({
+          data: {
+            id: 'act-1',
+            name: '金税四期风险识别专题课',
+            start_at: '2026-06-15T14:00:00Z',
+            end_at: '2026-06-15T17:00:00Z',
+            place: '上海静安区',
+            teacher: '王老师',
+            speaker_title: '资深税务顾问',
+            description: '本次沙龙将深度解析金税四期...',
+            cover_image: null,
+            status: 'published',
+          },
+          error: null,
+        });
+      } else if (table === 'activity_materials') {
+        (chain.select as ReturnType<typeof vi.fn>).mockReturnValue(chain);
+        (chain.eq as ReturnType<typeof vi.fn>).mockReturnValue(chain);
+        (chain.order as ReturnType<typeof vi.fn>).mockReturnValue(chain);
+        (chain.select as ReturnType<typeof vi.fn>).mockImplementation(() => chain);
+        (chain.maybeSingle as ReturnType<typeof vi.fn>).mockResolvedValue({
+          data: [],
+          error: null,
+        });
+      } else if (table === 'qr_codes') {
+        (chain.maybeSingle as ReturnType<typeof vi.fn>).mockResolvedValue({
+          data: { id: 'qr-1' },
+          error: null,
+        });
+      } else if (table === 'activity_checkins') {
+        (chain.maybeSingle as ReturnType<typeof vi.fn>).mockResolvedValue({
+          data: null,
+          error: null,
+        });
+      }
+
+      return chain;
     });
 
     const { GET } = await import('@/app/api/activities/[id]/landing/route');

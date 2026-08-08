@@ -142,13 +142,26 @@ function MarkdownAnswer({ content }: { content: string }) {
         ),
         hr: () => <hr className="border-border" />,
         table: ({ children }) => (
-          <div className="max-w-full overflow-x-auto rounded-md border border-border">
-            <table className="w-full min-w-[480px] border-collapse text-left text-xs">{children}</table>
+          <div
+            className="my-2 min-w-0 max-w-full touch-pan-x overflow-x-auto overscroll-x-contain rounded-md border border-border"
+            style={{ WebkitOverflowScrolling: "touch" }}
+          >
+            <table className="w-max min-w-[560px] max-w-none border-collapse text-left text-xs">
+              {children}
+            </table>
           </div>
         ),
         thead: ({ children }) => <thead className="bg-muted text-foreground">{children}</thead>,
-        th: ({ children }) => <th className="border-b border-r border-border px-3 py-2 font-semibold last:border-r-0">{children}</th>,
-        td: ({ children }) => <td className="border-b border-r border-border px-3 py-2 align-top text-muted-foreground last:border-r-0">{children}</td>,
+        th: ({ children }) => (
+          <th className="border-b border-r border-border px-3 py-2 font-semibold last:border-r-0">
+            {children}
+          </th>
+        ),
+        td: ({ children }) => (
+          <td className="border-b border-r border-border px-3 py-2 align-top text-muted-foreground last:border-r-0">
+            {children}
+          </td>
+        ),
         code: ({ children }) => (
           <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs text-foreground">{children}</code>
         ),
@@ -187,8 +200,8 @@ function AiAnswerCard({
   }, [answer.citations]);
 
   return (
-    <div className="max-w-full space-y-3 rounded-2xl rounded-tl-sm bg-card px-4 py-3 text-sm shadow-sm">
-      <div className="max-w-full space-y-3 overflow-hidden break-words">
+    <div className="min-w-0 max-w-full space-y-3 overflow-hidden rounded-2xl rounded-tl-sm bg-card px-4 py-3 text-sm shadow-sm">
+      <div className="min-w-0 max-w-full space-y-3 break-words">
         <MarkdownAnswer content={answer.answerText || answer.initialJudgment} />
       </div>
       <div className="border-t border-border pt-2">
