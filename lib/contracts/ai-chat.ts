@@ -105,6 +105,23 @@ export interface AiCitationDTO {
   score: number;
   pointId: string;
   docId: string;
+  documentNo?: string;
+  status?: string;
+  evidenceLevel?: string;
+  policyRelations?: PolicyRelationDTO[];
+}
+
+export interface PolicyRelationDTO {
+  direction: string;
+  sourceDocNo: string;
+  targetDocNo: string;
+  relationType: string;
+  scope: string;
+  confidence: string;
+  effectiveFrom: string;
+  effectiveTo: string;
+  evidenceText: string;
+  sourceUrl: string;
 }
 
 // ===========================================================================
@@ -147,6 +164,26 @@ export interface AiChatRequestDTO {
    * true 时服务端返回 text/event-stream，前端逐段渲染；不传或 false 保持原 JSON 响应。
    */
   stream?: boolean;
+  /** 专家固定入口使用；客户页保持默认 customer。 */
+  mode?: 'customer' | 'expert_review';
+}
+
+export type ExpertReviewKind = 'incorrect' | 'needs_revision';
+
+export interface ExpertReviewRequestDTO {
+  sessionId: string;
+  qaRecordId?: string | null;
+  question: string;
+  aiAnswer: string;
+  expertAnswer: string;
+  reviewKind: ExpertReviewKind;
+  reason: string;
+}
+
+export interface ExpertReviewResponseDTO {
+  id: string;
+  status: 'expert_modified';
+  createdAt: string;
 }
 
 /**
@@ -159,7 +196,7 @@ export interface AiChatResponseDTO {
    * 落库生成的问答记录 id（UUID）
    * 前端可用于后续"预约顾问"等操作的关联字段（如 POST /api/appointments 时携带）。
    */
-  qaRecordId: string;
+  qaRecordId: string | null;
   /**
    * 会话 id（本轮所属会话，服务端维护）
    * 前端将此 id 缓存后，下次提问时携带以实现多轮上下文。

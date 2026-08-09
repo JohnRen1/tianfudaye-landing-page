@@ -4,7 +4,7 @@ import { createQaRecord } from '@/lib/db';
 import { ok, fail } from '@/lib/api-response';
 import { requireUser } from '@/lib/auth';
 import { AI_CHAT_ERROR_CODES } from '@/lib/contracts/ai-chat';
-import type { AiAnswerBodyDTO, AiCitationDTO } from '@/lib/contracts/ai-chat';
+import type { AiAnswerBodyDTO, AiChatResponseDTO, AiCitationDTO } from '@/lib/contracts/ai-chat';
 import { isProdEnv, pickEnvByStage } from '@/lib/env';
 
 export const dynamic = 'force-dynamic';
@@ -16,6 +16,10 @@ interface RagCitationRaw {
   score?: unknown;
   point_id?: unknown;
   doc_id?: unknown;
+  document_no?: unknown;
+  status?: unknown;
+  evidence_level?: unknown;
+  policy_relations?: unknown;
 }
 
 interface RagChatResponseRaw {
@@ -71,6 +75,22 @@ function getAgentSessionId(userId: string, sessionId: string): string {
 }
 
 function normalizeCitation(raw: RagCitationRaw): AiCitationDTO {
+  const policyRelations = Array.isArray(raw.policy_relations)
+    ? raw.policy_relations
+        .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+        .map((item) => ({
+          direction: String(item.direction ?? ''),
+          sourceDocNo: String(item.source_doc_no ?? ''),
+          targetDocNo: String(item.target_doc_no ?? ''),
+          relationType: String(item.relation_type ?? ''),
+          scope: String(item.scope ?? ''),
+          confidence: String(item.confidence ?? ''),
+          effectiveFrom: String(item.effective_from ?? ''),
+          effectiveTo: String(item.effective_to ?? ''),
+          evidenceText: String(item.evidence_text ?? ''),
+          sourceUrl: String(item.source_url ?? ''),
+        }))
+    : [];
   return {
     title: typeof raw.title === 'string' ? raw.title : '未命名来源',
     sourcePath: typeof raw.source_path === 'string' ? raw.source_path : '',
@@ -78,6 +98,10 @@ function normalizeCitation(raw: RagCitationRaw): AiCitationDTO {
     score: typeof raw.score === 'number' ? raw.score : Number(raw.score ?? 0),
     pointId: typeof raw.point_id === 'string' ? raw.point_id : '',
     docId: typeof raw.doc_id === 'string' ? raw.doc_id : '',
+    documentNo: typeof raw.document_no === 'string' ? raw.document_no : '',
+    status: typeof raw.status === 'string' ? raw.status : '',
+    evidenceLevel: typeof raw.evidence_level === 'string' ? raw.evidence_level : '',
+    policyRelations,
   };
 }
 
@@ -339,6 +363,16 @@ function streamEvent(payload: unknown): string {
   return `data: ${JSON.stringify(payload)}\n\n`;
 }
 
+function buildExpertChatResponse(sessionId: string, answer: AiAnswerBodyDTO): AiChatResponseDTO {
+  return {
+    qaRecordId: null,
+    sessionId,
+    answer,
+    summary: answer.questionUnderstanding,
+    tags: [],
+  };
+}
+
 export async function POST(req: NextRequest) {
   let body: unknown;
   try {
@@ -347,7 +381,8 @@ export async function POST(req: NextRequest) {
     return fail(AI_CHAT_ERROR_CODES.VALIDATION_ERROR, '请求体格式错误', 400);
   }
 
-  const { question, sessionId, activityId, recentHistory, stream } = body as Record<string, unknown>;
+  const { question, sessionId, activityId, recentHistory, stream, mode } = body as Record<string, unknown>;
+  const isExpertMode = mode === 'expert_review';
 
   if (typeof question !== 'string' || question.trim().length === 0) {
     return fail(AI_CHAT_ERROR_CODES.AI_CHAT_QUESTION_EMPTY, '问题内容不能为空', 400);
@@ -366,12 +401,12 @@ export async function POST(req: NextRequest) {
       ? activityId.trim()
       : null;
 
-  const userCtx = await requireUser(req);
-  if (!userCtx) {
+  const userCtx = isExpertMode ? null : await requireUser(req);
+  if (!isExpertMode && !userCtx) {
     return fail('AUTH_REQUIRED', '请先登录后再使用 AI 问答', 401);
   }
-  const userId: string = userCtx.userId;
-  const agentSessionId = getAgentSessionId(userId, resolvedSessionId);
+  const userId: string | null = userCtx?.userId ?? null;
+  const agentSessionId = getAgentSessionId(userId ?? 'expert', resolvedSessionId);
   const normalizedQuestion = question.trim();
   const normalizedHistory = Array.isArray(recentHistory)
     ? recentHistory
@@ -405,13 +440,15 @@ export async function POST(req: NextRequest) {
           });
           const answer = buildRagAnswerFromText(normalizedQuestion, ragResult.answerText, ragResult.citations);
           failureStage = 'qa_record';
-          const response = await createQaRecord({
-            userId,
-            sessionId: resolvedSessionId,
-            activityId: resolvedActivityId,
-            question: normalizedQuestion,
-            answer,
-          });
+          const response = isExpertMode
+            ? buildExpertChatResponse(resolvedSessionId, answer)
+            : await createQaRecord({
+                userId,
+                sessionId: resolvedSessionId,
+                activityId: resolvedActivityId,
+                question: normalizedQuestion,
+                answer,
+              });
           controller.enqueue(encoder.encode(streamEvent({ type: 'done', data: response })));
         } catch (error) {
           const aborted = error instanceof Error && error.name === 'AbortError';
@@ -460,13 +497,15 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const response = await createQaRecord({
-      userId,
-      sessionId: resolvedSessionId,
-      activityId: resolvedActivityId,
-      question: normalizedQuestion,
-      answer,
-    });
+    const response = isExpertMode
+      ? buildExpertChatResponse(resolvedSessionId, answer)
+      : await createQaRecord({
+          userId,
+          sessionId: resolvedSessionId,
+          activityId: resolvedActivityId,
+          question: normalizedQuestion,
+          answer,
+        });
     return ok(response, 201);
   } catch (error) {
     return fail(

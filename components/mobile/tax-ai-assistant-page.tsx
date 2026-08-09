@@ -18,12 +18,13 @@ import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LoginModal } from "./login-modal";
-import { sendMessageStream } from "@/lib/api/ai-chat";
+import { saveExpertReview, sendMessageStream } from "@/lib/api/ai-chat";
 import type { AiAnswerBodyDTO, AiChatRequestDTO, ChatMessageDTO } from "@/lib/contracts/ai-chat";
 import { getClientAuthToken, hydrateClientAuthFromServer, isClientLoggedIn } from "@/lib/client-auth";
 import { buildPathWithTracking } from "@/lib/tracking-context";
 import {
   CHAT_STATE_STORAGE_KEY_PREFIX,
+  EXPERT_SESSION_STORAGE_KEY,
   getChatStateStorageKey,
 } from "./tax-ai-chat-state";
 
@@ -189,10 +190,25 @@ function MarkdownAnswer({ content }: { content: string }) {
 function AiAnswerCard({
   answer,
   onSupportClick,
+  expertMode = false,
+  question = "",
+  sessionId,
+  qaRecordId,
+  onReviewStarted,
 }: {
   answer: AiAnswerBodyDTO;
   onSupportClick: () => void;
+  expertMode?: boolean;
+  question?: string;
+  sessionId: string | null;
+  qaRecordId: string | null;
+  onReviewStarted?: () => void;
 }) {
+  const [reviewKind, setReviewKind] = useState<"incorrect" | "needs_revision" | null>(null);
+  const [expertAnswer, setExpertAnswer] = useState(answer.answerText || answer.initialJudgment);
+  const [reason, setReason] = useState("");
+  const [isSavingReview, setIsSavingReview] = useState(false);
+  const [reviewSaved, setReviewSaved] = useState(false);
   useEffect(() => {
     if (showAiDebug && answer.citations && answer.citations.length > 0) {
       console.debug("[tax-ai] reference citations", answer.citations);
@@ -204,17 +220,116 @@ function AiAnswerCard({
       <div className="min-w-0 max-w-full space-y-3 break-words">
         <MarkdownAnswer content={answer.answerText || answer.initialJudgment} />
       </div>
+      {expertMode && answer.citations && answer.citations.length > 0 && (
+        <details className="rounded-xl border border-border bg-muted/30 p-3 text-xs">
+          <summary className="cursor-pointer font-medium text-foreground">查看法规证据</summary>
+          <div className="mt-2 space-y-3 text-muted-foreground">
+            {answer.citations.map((citation, index) => (
+              <div key={`${citation.pointId || citation.docId || citation.title}-${index}`} className="space-y-1">
+                <p className="font-medium text-foreground">{citation.title || "未命名来源"}</p>
+                <p>
+                  {citation.documentNo || "未提供文号"} · {citation.section || "正文"} · {citation.status || "unknown"}
+                </p>
+                {citation.policyRelations?.map((relation, relationIndex) => (
+                  <p key={`${relation.relationType}-${relationIndex}`} className="text-primary">
+                    政策关系：{relation.sourceDocNo} → {relation.targetDocNo}（{relation.relationType}，置信度：{relation.confidence}）
+                  </p>
+                ))}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
       <div className="border-t border-border pt-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-8 px-2 text-xs text-primary"
-          onClick={onSupportClick}
-        >
-          <Headphones className="mr-1.5 h-3.5 w-3.5" />
-          联系人工客服
-        </Button>
+        {expertMode ? (
+          <div className="space-y-2">
+            {!reviewKind && !reviewSaved && (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    onReviewStarted?.();
+                    setReviewKind("incorrect");
+                  }}
+                >
+                  回答有误
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    onReviewStarted?.();
+                    setReviewKind("needs_revision");
+                  }}
+                >
+                  需要修正
+                </Button>
+              </div>
+            )}
+            {reviewKind && !reviewSaved && (
+              <div className="space-y-2 rounded-xl border border-primary/20 bg-primary/5 p-3">
+                <p className="text-xs font-medium text-primary">请直接修改回答，法规引用保持原样。</p>
+                <textarea
+                  value={expertAnswer}
+                  onChange={(event) => setExpertAnswer(event.target.value)}
+                  className="min-h-32 w-full rounded-lg border border-border bg-background p-2 text-sm leading-relaxed outline-none focus:border-primary"
+                  aria-label="专家修正答案"
+                />
+                <textarea
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  placeholder="请填写修正原因"
+                  className="min-h-20 w-full rounded-lg border border-border bg-background p-2 text-sm leading-relaxed outline-none focus:border-primary"
+                  aria-label="专家修正原因"
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setReviewKind(null)}>
+                    取消
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={isSavingReview || !expertAnswer.trim() || !reason.trim() || !sessionId}
+                    onClick={async () => {
+                      setIsSavingReview(true);
+                      try {
+                        await saveExpertReview({
+                          sessionId: sessionId ?? "",
+                          qaRecordId,
+                          question,
+                          aiAnswer: answer.answerText || answer.initialJudgment,
+                          expertAnswer,
+                          reviewKind,
+                          reason,
+                        });
+                        setReviewSaved(true);
+                      } finally {
+                        setIsSavingReview(false);
+                      }
+                    }}
+                  >
+                    {isSavingReview ? "保存中..." : "保存专家修正"}
+                  </Button>
+                </div>
+              </div>
+            )}
+            {reviewSaved && <p className="text-xs font-medium text-primary">专家已修改，已保存审阅版本。</p>}
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs text-primary"
+            onClick={onSupportClick}
+          >
+            <Headphones className="mr-1.5 h-3.5 w-3.5" />
+            联系人工客服
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -229,7 +344,7 @@ function AiLoadingCard() {
   );
 }
 
-export function TaxAiAssistantPage() {
+export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activityId = searchParams.get("activity_id") ?? searchParams.get("activity");
@@ -241,18 +356,24 @@ export function TaxAiAssistantPage() {
   const [messages, setMessages] = useState<ChatMessageDTO[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isReviewLocked, setIsReviewLocked] = useState(false);
   const [isChatStateRestored, setIsChatStateRestored] = useState(false);
   const [chatStateStorageKey, setChatStateStorageKey] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (expertMode) {
+      setIsLoggedIn(true);
+      setChatStateStorageKey(EXPERT_SESSION_STORAGE_KEY);
+      return;
+    }
     void hydrateClientAuthFromServer().then((loggedIn) => {
       setIsLoggedIn(loggedIn);
       const token = getClientAuthToken();
       setChatStateStorageKey(loggedIn ? getChatStateStorageKey(token) : null);
     });
-  }, []);
+  }, [expertMode]);
 
   useEffect(() => {
     if (chatStateStorageKey === null) return;
@@ -283,6 +404,7 @@ export function TaxAiAssistantPage() {
   }, [messages, isThinking]);
 
   const requireLogin = () => {
+    if (expertMode) return true;
     if (isLoggedIn) return true;
     setShowLoginModal(true);
     return false;
@@ -292,7 +414,7 @@ export function TaxAiAssistantPage() {
   const fallbackBackPath = buildTrackedPath("/");
   const requestedBackPath = searchParams.get("returnTo");
   const backPath = isSafeInternalPath(requestedBackPath) ? requestedBackPath : fallbackBackPath;
-  const currentPath = `/tax-ai${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+  const currentPath = `${expertMode ? "/tax-ai-pro" : "/tax-ai"}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
   const openSupport = () => {
     if (chatStateStorageKey !== null) {
       persistChatState(chatStateStorageKey, messages, sessionId, inputValue);
@@ -308,7 +430,7 @@ export function TaxAiAssistantPage() {
 
   const submitQuestion = async (question: string) => {
     const text = question.trim();
-    if (!text || isThinking || !requireLogin()) return;
+    if (!text || isThinking || isReviewLocked || !requireLogin()) return;
 
     const userMsgId = Date.now();
     const aiMsgId = userMsgId + 1;
@@ -369,7 +491,7 @@ export function TaxAiAssistantPage() {
             ),
           );
         },
-      });
+      }, expertMode ? "expert_review" : "customer");
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "请求失败，请稍后重试";
@@ -407,12 +529,12 @@ export function TaxAiAssistantPage() {
               <Sparkles className="h-7 w-7" />
             </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-2xl font-bold tracking-tight">AI 客服助手</h1>
+              <h1 className="text-2xl font-bold tracking-tight">{expertMode ? "专家问答" : "AI 客服助手"}</h1>
             </div>
           </div>
 
           <p className="mt-4 max-w-[300px] text-sm leading-relaxed text-white/80">
-            可以直接提问，也可以接着上一轮自然交流
+            {expertMode ? "用于审阅法规问答，发现错误后直接修正" : "可以直接提问，也可以接着上一轮自然交流"}
           </p>
         </div>
       </header>
@@ -463,7 +585,19 @@ export function TaxAiAssistantPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   {message.answer ? (
-                    <AiAnswerCard answer={message.answer} onSupportClick={openSupport} />
+                    <AiAnswerCard
+                      answer={message.answer}
+                      onSupportClick={openSupport}
+                      expertMode={expertMode}
+                      question={(() => {
+                        const index = messages.findIndex((item) => item.id === message.id);
+                        const previous = index > 0 ? messages[index - 1] : null;
+                        return previous?.role === "user" ? previous.content : "";
+                      })()}
+                      sessionId={sessionId}
+                      qaRecordId={message.qaRecordId}
+                      onReviewStarted={expertMode ? () => setIsReviewLocked(true) : undefined}
+                    />
                   ) : (
                     <AiLoadingCard />
                   )}
@@ -486,8 +620,9 @@ export function TaxAiAssistantPage() {
       <div className="fixed bottom-0 left-1/2 right-auto w-full max-w-[390px] -translate-x-1/2 border-t border-border bg-card/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-lg backdrop-blur">
         <div className="mx-auto flex max-w-[390px] gap-2">
           <Input
-            placeholder="请输入消息"
+            placeholder={isReviewLocked ? "该回答已进入修正，请重新开始会话" : "请输入消息"}
             value={inputValue}
+            disabled={isReviewLocked}
             onChange={(event) => setInputValue(event.target.value)}
             onFocus={requireLogin}
             onKeyDown={(event) => {
@@ -498,7 +633,7 @@ export function TaxAiAssistantPage() {
           <Button
             className="h-12 w-12 shrink-0 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90"
             onClick={() => submitQuestion(inputValue)}
-            disabled={isThinking}
+            disabled={isThinking || isReviewLocked}
             aria-label="发送"
           >
             {isThinking ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}

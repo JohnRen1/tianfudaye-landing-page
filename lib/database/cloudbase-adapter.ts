@@ -117,6 +117,26 @@ export const listUserAppointments: typeof SupabaseAdapter.listUserAppointments =
 export const createQaRecord: typeof SupabaseAdapter.createQaRecord = async () =>
   notImplemented('createQaRecord');
 
+export const createExpertReview: typeof SupabaseAdapter.createExpertReview = async (params) => {
+  const row = await queryFirst<{ id: string; created_at: string }>(
+    `insert into public.qa_expert_reviews
+       (session_id, qa_record_id, question, ai_answer, expert_answer, review_kind, reason, status)
+     values (:sessionId, :qaRecordId, :question, :aiAnswer, :expertAnswer, :reviewKind, :reason, 'expert_modified')
+     returning id, created_at`,
+    {
+      sessionId: params.sessionId,
+      qaRecordId: params.qaRecordId,
+      question: params.question.trim(),
+      aiAnswer: params.aiAnswer.trim(),
+      expertAnswer: params.expertAnswer.trim(),
+      reviewKind: params.reviewKind,
+      reason: params.reason.trim(),
+    },
+  );
+  if (!row) throw new Error('专家修正保存失败');
+  return { id: row.id, status: 'expert_modified', createdAt: row.created_at };
+};
+
 export const claimMaterial: typeof SupabaseAdapter.claimMaterial = async () =>
   notImplemented('claimMaterial');
 

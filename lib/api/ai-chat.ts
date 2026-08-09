@@ -6,6 +6,7 @@
 
 import { apiPost } from './client';
 import type { AiChatRequestDTO, AiChatResponseDTO } from '../contracts/ai-chat';
+import type { ExpertReviewRequestDTO, ExpertReviewResponseDTO } from '../contracts/ai-chat';
 import { getClientAuthToken } from '../client-auth';
 
 type AiChatStreamEvent =
@@ -55,6 +56,7 @@ export async function sendMessageStream(
     onDone: (response: AiChatResponseDTO) => void;
     onError?: (message: string, code?: string) => void;
   },
+  mode: AiChatRequestDTO['mode'] = 'customer',
 ): Promise<void> {
   const body: AiChatRequestDTO = {
     question,
@@ -62,6 +64,7 @@ export async function sendMessageStream(
     ...(activityId !== undefined ? { activityId } : {}),
     ...(recentHistory?.length ? { recentHistory } : {}),
     stream: true,
+    mode,
   };
   const headers = new Headers({ 'Content-Type': 'application/json' });
   const token = getClientAuthToken();
@@ -110,4 +113,11 @@ export async function sendMessageStream(
       throw new Error(event.message);
     }
   }
+}
+
+export async function saveExpertReview(
+  request: ExpertReviewRequestDTO,
+): Promise<ExpertReviewResponseDTO> {
+  const response = await apiPost<ExpertReviewResponseDTO>('/api/ai/expert-review', request);
+  return response;
 }

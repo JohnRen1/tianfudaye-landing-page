@@ -1,6 +1,7 @@
 export const CHAT_STATE_STORAGE_KEY_PREFIX = "tax-ai-chat-state-v1:";
 
 const AUTHENTICATED_SESSION_STORAGE_KEY = `${CHAT_STATE_STORAGE_KEY_PREFIX}authenticated-session`;
+export const EXPERT_SESSION_STORAGE_KEY = `${CHAT_STATE_STORAGE_KEY_PREFIX}expert-review`;
 
 export function getChatStateStorageKey(token: string | null): string {
   if (!token) return AUTHENTICATED_SESSION_STORAGE_KEY;

@@ -836,6 +836,39 @@ export async function createQaRecord(params: {
   };
 }
 
+export async function createExpertReview(params: {
+  sessionId: string;
+  qaRecordId: string | null;
+  question: string;
+  aiAnswer: string;
+  expertAnswer: string;
+  reviewKind: 'incorrect' | 'needs_revision';
+  reason: string;
+}): Promise<{ id: string; status: 'expert_modified'; createdAt: string }> {
+  const serviceClient = createServiceClient();
+  const { data: record, error } = await serviceClient
+    .from('qa_expert_reviews')
+    .insert({
+      session_id: params.sessionId,
+      qa_record_id: params.qaRecordId,
+      question: params.question.trim(),
+      ai_answer: params.aiAnswer.trim(),
+      expert_answer: params.expertAnswer.trim(),
+      review_kind: params.reviewKind,
+      reason: params.reason.trim(),
+      status: 'expert_modified',
+    })
+    .select('id, status, created_at')
+    .single();
+
+  if (error || !record) throw new Error(error?.message ?? '专家修正保存失败');
+  return {
+    id: record.id as string,
+    status: 'expert_modified',
+    createdAt: record.created_at as string,
+  };
+}
+
 export async function claimMaterial(params: {
   userId: string;
   isProfileComplete: boolean;
