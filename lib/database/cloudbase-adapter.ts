@@ -133,12 +133,14 @@ export const createQaRecord: typeof SupabaseAdapter.createQaRecord = async () =>
 export const createExpertReview: typeof SupabaseAdapter.createExpertReview = async (params) => {
   const row = await queryFirst<{ id: string; created_at: string }>(
     `insert into public.qa_expert_reviews
-       (session_id, qa_record_id, question, ai_answer, expert_answer, review_kind, reason, status)
-     values (:sessionId, :qaRecordId, :question, :aiAnswer, :expertAnswer, :reviewKind, :reason, 'expert_modified')
+       (session_id, qa_record_id, expert_name, expert_contact, question, ai_answer, expert_answer, review_kind, reason, status)
+     values (:sessionId, :qaRecordId, :expertName, :expertContact, :question, :aiAnswer, :expertAnswer, :reviewKind, :reason, 'expert_modified')
      returning id, created_at`,
     {
       sessionId: params.sessionId,
       qaRecordId: params.qaRecordId,
+      expertName: params.expertName.trim(),
+      expertContact: params.expertContact.trim(),
       question: params.question.trim(),
       aiAnswer: params.aiAnswer.trim(),
       expertAnswer: params.expertAnswer.trim(),

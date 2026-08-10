@@ -285,6 +285,7 @@ function AiAnswerCard({
   const [expertComment, setExpertComment] = useState("");
   const [isSavingReview, setIsSavingReview] = useState(false);
   const [reviewSaved, setReviewSaved] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   useEffect(() => {
     if (showAiDebug && answer.citations && answer.citations.length > 0) {
       console.debug("[tax-ai] reference citations", answer.citations);
@@ -379,27 +380,48 @@ function AiAnswerCard({
                   aria-label="专家意见"
                 />
                 <div className="flex items-center justify-between gap-2">
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setReviewKind(null)}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setReviewKind(null);
+                      setReviewError(null);
+                    }}
+                  >
                     取消
                   </Button>
                   <Button
                     type="button"
                     size="sm"
-                    disabled={isSavingReview || !expertComment.trim() || !sessionId}
+                    disabled={isSavingReview || !expertComment.trim()}
                     onClick={async () => {
+                      const comment = expertComment.trim();
+                      const aiAnswer = answer.answerText || answer.initialJudgment;
+                      const reviewSessionId = sessionId?.trim() || qaRecordId || `expert-review-${Date.now()}`;
+                      if (!comment) {
+                        setReviewError("请先填写专家意见。");
+                        return;
+                      }
+                      if (!question.trim() || !aiAnswer.trim()) {
+                        setReviewError("当前回答信息不完整，请刷新页面后重试。");
+                        return;
+                      }
                       setIsSavingReview(true);
+                      setReviewError(null);
                       try {
-                        const comment = expertComment.trim();
                         await saveExpertReview({
-                          sessionId: sessionId ?? "",
+                          sessionId: reviewSessionId,
                           qaRecordId,
                           question,
-                          aiAnswer: answer.answerText || answer.initialJudgment,
+                          aiAnswer,
                           expertAnswer: comment,
                           reviewKind,
                           reason: comment,
                         });
                         setReviewSaved(true);
+                      } catch (error) {
+                        setReviewError(error instanceof Error ? error.message : "专家意见提交失败，请稍后重试。");
                       } finally {
                         setIsSavingReview(false);
                       }
@@ -408,6 +430,11 @@ function AiAnswerCard({
                     {isSavingReview ? "提交中..." : "提交专家意见"}
                   </Button>
                 </div>
+                {reviewError && (
+                  <p className="rounded-lg border border-destructive/20 bg-destructive/5 px-2 py-1.5 text-xs text-destructive">
+                    {reviewError}
+                  </p>
+                )}
               </div>
             )}
             {reviewSaved && (

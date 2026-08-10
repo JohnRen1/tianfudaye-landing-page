@@ -1,10 +1,15 @@
+import { NextRequest } from 'next/server';
 import { createExpertReview } from '@/lib/db';
 import { fail, ok } from '@/lib/api-response';
 import type { ExpertReviewRequestDTO } from '@/lib/contracts/ai-chat';
+import { requireUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  const userCtx = await requireUser(req);
+  if (!userCtx) return fail('AUTH_REQUIRED', '请先登录', 401);
+
   let body: Partial<ExpertReviewRequestDTO>;
   try {
     body = (await req.json()) as Partial<ExpertReviewRequestDTO>;
@@ -30,6 +35,8 @@ export async function POST(req: Request) {
     const review = await createExpertReview({
       sessionId,
       qaRecordId: typeof body.qaRecordId === 'string' ? body.qaRecordId : null,
+      expertName: userCtx.user.name?.trim() || userCtx.user.phone,
+      expertContact: userCtx.user.phone,
       question,
       aiAnswer,
       expertAnswer,

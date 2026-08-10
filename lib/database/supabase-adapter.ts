@@ -852,6 +852,8 @@ export async function createQaRecord(params: {
 export async function createExpertReview(params: {
   sessionId: string;
   qaRecordId: string | null;
+  expertName: string;
+  expertContact: string;
   question: string;
   aiAnswer: string;
   expertAnswer: string;
@@ -864,6 +866,8 @@ export async function createExpertReview(params: {
     .insert({
       session_id: params.sessionId,
       qa_record_id: params.qaRecordId,
+      expert_name: params.expertName.trim(),
+      expert_contact: params.expertContact.trim(),
       question: params.question.trim(),
       ai_answer: params.aiAnswer.trim(),
       expert_answer: params.expertAnswer.trim(),
