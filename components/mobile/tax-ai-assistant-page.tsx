@@ -282,8 +282,7 @@ function AiAnswerCard({
   onReviewStarted?: () => void;
 }) {
   const [reviewKind, setReviewKind] = useState<"incorrect" | "needs_revision" | null>(null);
-  const [expertAnswer, setExpertAnswer] = useState(answer.answerText || answer.initialJudgment);
-  const [reason, setReason] = useState("");
+  const [expertComment, setExpertComment] = useState("");
   const [isSavingReview, setIsSavingReview] = useState(false);
   const [reviewSaved, setReviewSaved] = useState(false);
   useEffect(() => {
@@ -371,19 +370,13 @@ function AiAnswerCard({
             )}
             {reviewKind && !reviewSaved && (
               <div className="space-y-2 rounded-xl border border-primary/20 bg-primary/5 p-3">
-                <p className="text-xs font-medium text-primary">请直接修改回答，法规引用保持原样。</p>
+                <p className="text-xs font-medium text-primary">请指出回答哪里有误，或补充需要修正的判断依据。</p>
                 <textarea
-                  value={expertAnswer}
-                  onChange={(event) => setExpertAnswer(event.target.value)}
+                  value={expertComment}
+                  onChange={(event) => setExpertComment(event.target.value)}
+                  placeholder="例如：这里把排除条件当成充分条件了；还需要确认是否属于改制重组背景。"
                   className="min-h-32 w-full rounded-lg border border-border bg-background p-2 text-sm leading-relaxed outline-none focus:border-primary"
-                  aria-label="专家修正答案"
-                />
-                <textarea
-                  value={reason}
-                  onChange={(event) => setReason(event.target.value)}
-                  placeholder="请填写修正原因"
-                  className="min-h-20 w-full rounded-lg border border-border bg-background p-2 text-sm leading-relaxed outline-none focus:border-primary"
-                  aria-label="专家修正原因"
+                  aria-label="专家意见"
                 />
                 <div className="flex items-center justify-between gap-2">
                   <Button type="button" variant="ghost" size="sm" onClick={() => setReviewKind(null)}>
@@ -392,18 +385,19 @@ function AiAnswerCard({
                   <Button
                     type="button"
                     size="sm"
-                    disabled={isSavingReview || !expertAnswer.trim() || !reason.trim() || !sessionId}
+                    disabled={isSavingReview || !expertComment.trim() || !sessionId}
                     onClick={async () => {
                       setIsSavingReview(true);
                       try {
+                        const comment = expertComment.trim();
                         await saveExpertReview({
                           sessionId: sessionId ?? "",
                           qaRecordId,
                           question,
                           aiAnswer: answer.answerText || answer.initialJudgment,
-                          expertAnswer,
+                          expertAnswer: comment,
                           reviewKind,
-                          reason,
+                          reason: comment,
                         });
                         setReviewSaved(true);
                       } finally {
@@ -411,12 +405,16 @@ function AiAnswerCard({
                       }
                     }}
                   >
-                    {isSavingReview ? "保存中..." : "保存专家修正"}
+                    {isSavingReview ? "提交中..." : "提交专家意见"}
                   </Button>
                 </div>
               </div>
             )}
-            {reviewSaved && <p className="text-xs font-medium text-primary">专家已修改，已保存审阅版本。</p>}
+            {reviewSaved && (
+              <Button type="button" variant="outline" size="sm" disabled className="h-8 text-xs">
+                已提交专家意见
+              </Button>
+            )}
           </div>
         ) : (
           <Button
