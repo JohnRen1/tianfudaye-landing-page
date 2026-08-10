@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
 
 const createExpertReview = vi.fn();
+const isExpertUserPhone = vi.fn();
 
-vi.mock('@/lib/db', () => ({ createExpertReview }));
+vi.mock('@/lib/db', () => ({ createExpertReview, isExpertUserPhone }));
+vi.mock('@/lib/auth', () => ({ requireUser: vi.fn() }));
+
+import { requireUser } from '@/lib/auth';
 
 describe('POST /api/ai/expert-review', () => {
   it('requires a correction reason before saving', async () => {
@@ -59,5 +64,34 @@ describe('POST /api/ai/expert-review', () => {
       reviewKind: 'incorrect',
       reason: '排除条件不是充分条件。',
     });
+  });
+});
+
+describe('GET /api/auth/expert-status', () => {
+  it('returns expert status for current logged-in user phone', async () => {
+    vi.mocked(requireUser).mockResolvedValueOnce({
+      userId: 'expert-user-1',
+      user: {
+        id: 'expert-user-1',
+        name: '高琨',
+        phone: '13791127972',
+        identity: null,
+        company: null,
+        industry: null,
+        size: null,
+        registeredAt: '2026-08-10T00:00:00.000Z',
+        activeAt: '2026-08-10T00:00:00.000Z',
+        isProfileComplete: true,
+      },
+    });
+    isExpertUserPhone.mockResolvedValueOnce(true);
+
+    const { GET } = await import('@/app/api/auth/expert-status/route');
+    const response = await GET(new NextRequest('http://localhost/api/auth/expert-status'));
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as { success: true; data: { isExpert: boolean } };
+    expect(body.data.isExpert).toBe(true);
+    expect(isExpertUserPhone).toHaveBeenCalledWith('13791127972');
   });
 });

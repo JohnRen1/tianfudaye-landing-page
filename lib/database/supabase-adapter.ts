@@ -119,6 +119,19 @@ export async function getCurrentUserById(userId: string): Promise<CurrentUserDTO
   };
 }
 
+export async function isExpertUserPhone(phone: string): Promise<boolean> {
+  const serviceClient = createServiceClient();
+  const { data: row, error } = await serviceClient
+    .from('tax_ai_expert_users')
+    .select('phone')
+    .eq('phone', phone)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return Boolean(row);
+}
+
 const REPORT_MODULE_KEYS: ReportModuleKey[] = [
   'report_invoice',
   'report_fund',

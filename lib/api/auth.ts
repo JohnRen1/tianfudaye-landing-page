@@ -10,6 +10,7 @@ import type {
   SendCodeResponseDTO,
   PhoneLoginResponseDTO,
   CurrentUserDTO,
+  ExpertStatusDTO,
   UserProfileCompleteDTO,
   UserProfileCompletedResponseDTO,
 } from '../contracts/auth';
@@ -69,6 +70,10 @@ export async function loginPhone(
  */
 export async function me(): Promise<CurrentUserDTO> {
   return apiGet<CurrentUserDTO>('/api/auth/me');
+}
+
+export async function getExpertStatus(): Promise<ExpertStatusDTO> {
+  return apiGet<ExpertStatusDTO>('/api/auth/expert-status');
 }
 
 /**

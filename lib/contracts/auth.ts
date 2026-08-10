@@ -202,6 +202,10 @@ export interface CurrentUserDTO {
   isProfileComplete: boolean;
 }
 
+export interface ExpertStatusDTO {
+  isExpert: boolean;
+}
+
 /**
  * UserMeAssessmentSummaryDTO — 用户个人报告摘要（落地页"我的报告"展示）
  * 对应 GET /api/auth/me/report

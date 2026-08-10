@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LoginModal } from "./login-modal";
 import { saveExpertReview, sendMessageStream } from "@/lib/api/ai-chat";
+import { getExpertStatus } from "@/lib/api/auth";
 import type { AiAnswerBodyDTO, AiChatRequestDTO, ChatMessageDTO, AiCitationDTO, PolicyRelationDTO } from "@/lib/contracts/ai-chat";
 import { getClientAuthToken, hydrateClientAuthFromServer, isClientLoggedIn } from "@/lib/client-auth";
 import { buildPathWithTracking } from "@/lib/tracking-context";
@@ -254,6 +255,15 @@ function mergeCitationsBySource(citations: AiCitationDTO[]): AiCitationDTO[] {
   return Array.from(groups.values());
 }
 
+async function isCurrentUserExpert(): Promise<boolean> {
+  try {
+    const status = await getExpertStatus();
+    return status.isExpert;
+  } catch {
+    return false;
+  }
+}
+
 function AiAnswerCard({
   answer,
   onSupportClick,
@@ -458,12 +468,16 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
       setChatStateStorageKey(EXPERT_SESSION_STORAGE_KEY);
       return;
     }
-    void hydrateClientAuthFromServer().then((loggedIn) => {
+    void hydrateClientAuthFromServer().then(async (loggedIn) => {
       setIsLoggedIn(loggedIn);
       const token = getClientAuthToken();
       setChatStateStorageKey(loggedIn ? getChatStateStorageKey(token) : null);
+      if (loggedIn && await isCurrentUserExpert()) {
+        const targetPath = `/tax-ai-pro${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+        router.replace(targetPath);
+      }
     });
-  }, [expertMode]);
+  }, [expertMode, router, searchParams]);
 
   useEffect(() => {
     if (chatStateStorageKey === null) return;
@@ -516,6 +530,12 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
   const restoreChatStateForCurrentUser = () => {
     const token = getClientAuthToken();
     setChatStateStorageKey(getChatStateStorageKey(token));
+  };
+  const redirectExpertUserIfNeeded = async () => {
+    if (expertMode) return;
+    if (!await isCurrentUserExpert()) return;
+    const targetPath = `/tax-ai-pro${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+    router.replace(targetPath);
   };
 
   const submitQuestion = async (question: string) => {
@@ -741,6 +761,7 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
         onSuccess={() => {
           setIsLoggedIn(true);
           restoreChatStateForCurrentUser();
+          void redirectExpertUserIfNeeded();
         }}
       />
     </div>

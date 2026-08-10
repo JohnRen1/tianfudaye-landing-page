@@ -68,6 +68,19 @@ export async function getCurrentUserById(userId: string): Promise<CurrentUserDTO
   };
 }
 
+export async function isExpertUserPhone(phone: string): Promise<boolean> {
+  const row = await queryFirst<{ phone: string }>(
+    `select phone
+     from public.tax_ai_expert_users
+     where phone = :phone
+       and is_active = true
+     limit 1`,
+    { phone },
+  );
+
+  return Boolean(row);
+}
+
 export async function listAssessmentQuestions(): Promise<QuestionPublicDTO[]> {
   const rows = await queryRows<QuestionRow>(
     `select id, module_key, type, title, description, sort_order, options

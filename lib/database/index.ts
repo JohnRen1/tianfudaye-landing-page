@@ -16,6 +16,7 @@ const adapter = databaseProvider === 'cloudbase' ? cloudbase : supabase;
 
 export const createServiceClient = adapter.createServiceClient;
 export const getCurrentUserById = adapter.getCurrentUserById;
+export const isExpertUserPhone = adapter.isExpertUserPhone;
 export const listAssessmentQuestions = adapter.listAssessmentQuestions;
 export const submitAssessment = adapter.submitAssessment;
 export const getAssessmentReportById = adapter.getAssessmentReportById;
