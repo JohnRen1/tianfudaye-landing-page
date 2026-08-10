@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LoginModal } from "./login-modal";
 import { saveExpertReview, sendMessageStream } from "@/lib/api/ai-chat";
-import type { AiAnswerBodyDTO, AiChatRequestDTO, ChatMessageDTO } from "@/lib/contracts/ai-chat";
+import type { AiAnswerBodyDTO, AiChatRequestDTO, ChatMessageDTO, AiCitationDTO, PolicyRelationDTO } from "@/lib/contracts/ai-chat";
 import { getClientAuthToken, hydrateClientAuthFromServer, isClientLoggedIn } from "@/lib/client-auth";
 import { buildPathWithTracking } from "@/lib/tracking-context";
 import {
@@ -187,6 +187,73 @@ function MarkdownAnswer({ content }: { content: string }) {
   );
 }
 
+const relationTypeLabel: Record<string, string> = {
+  full_repeal: "全文废止",
+  partial_repeal: "部分废止/调整",
+  extends: "延续执行",
+  keeps_conditions: "其他条件不变",
+  sets_deadline: "明确执行期限",
+  amends: "修改/调整",
+  replaces: "替代执行",
+  follows: "按照新文件执行",
+  conflict_override: "新规优先",
+};
+
+const confidenceLabel: Record<string, string> = {
+  high: "高",
+  medium: "中",
+  low: "低",
+};
+
+function getRelationTypeLabel(type: string): string {
+  return relationTypeLabel[type] ?? (type || "未标注关系");
+}
+
+function getConfidenceLabel(confidence: string): string {
+  return confidenceLabel[confidence] ?? (confidence || "未标注");
+}
+
+function citationGroupKey(citation: AiCitationDTO): string {
+  return citation.documentNo || citation.sourcePath || citation.title || citation.docId || citation.pointId;
+}
+
+function relationKey(relation: PolicyRelationDTO): string {
+  return [
+    relation.sourceDocNo,
+    relation.targetDocNo,
+    relation.relationType,
+    relation.scope,
+    relation.evidenceText,
+  ].join("|");
+}
+
+function mergeCitationsBySource(citations: AiCitationDTO[]): AiCitationDTO[] {
+  const groups = new Map<string, AiCitationDTO>();
+
+  for (const citation of citations) {
+    const key = citationGroupKey(citation);
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, {
+        ...citation,
+        policyRelations: [...(citation.policyRelations ?? [])],
+      });
+      continue;
+    }
+
+    const existingRelations = existing.policyRelations ?? [];
+    const relationKeys = new Set(existingRelations.map(relationKey));
+    const nextRelations = (citation.policyRelations ?? []).filter((relation) => !relationKeys.has(relationKey(relation)));
+    existing.policyRelations = [...existingRelations, ...nextRelations];
+    existing.score = Math.max(existing.score, citation.score);
+    existing.section = existing.section === citation.section ? existing.section : "多处正文";
+    existing.status = existing.status || citation.status;
+    existing.evidenceLevel = existing.evidenceLevel || citation.evidenceLevel;
+  }
+
+  return Array.from(groups.values());
+}
+
 function AiAnswerCard({
   answer,
   onSupportClick,
@@ -214,27 +281,50 @@ function AiAnswerCard({
       console.debug("[tax-ai] reference citations", answer.citations);
     }
   }, [answer.citations]);
+  const evidenceCitations = answer.citations ? mergeCitationsBySource(answer.citations) : [];
 
   return (
     <div className="min-w-0 max-w-full space-y-3 overflow-hidden rounded-2xl rounded-tl-sm bg-card px-4 py-3 text-sm shadow-sm">
       <div className="min-w-0 max-w-full space-y-3 break-words">
         <MarkdownAnswer content={answer.answerText || answer.initialJudgment} />
       </div>
-      {expertMode && answer.citations && answer.citations.length > 0 && (
+      {expertMode && evidenceCitations.length > 0 && (
         <details className="rounded-xl border border-border bg-muted/30 p-3 text-xs">
           <summary className="cursor-pointer font-medium text-foreground">查看法规证据</summary>
           <div className="mt-2 space-y-3 text-muted-foreground">
-            {answer.citations.map((citation, index) => (
-              <div key={`${citation.pointId || citation.docId || citation.title}-${index}`} className="space-y-1">
-                <p className="font-medium text-foreground">{citation.title || "未命名来源"}</p>
-                <p>
-                  {citation.documentNo || "未提供文号"} · {citation.section || "正文"} · {citation.status || "unknown"}
-                </p>
-                {citation.policyRelations?.map((relation, relationIndex) => (
-                  <p key={`${relation.relationType}-${relationIndex}`} className="text-primary">
-                    政策关系：{relation.sourceDocNo} → {relation.targetDocNo}（{relation.relationType}，置信度：{relation.confidence}）
+            {evidenceCitations.map((citation, index) => (
+              <div
+                key={`${citation.pointId || citation.docId || citation.title}-${index}`}
+                className="space-y-2 rounded-lg border border-border bg-background/70 p-2.5"
+              >
+                <div className="space-y-1">
+                  <p className="font-medium text-foreground">{citation.title || "未命名来源"}</p>
+                  <p>
+                    当前引用依据：{citation.documentNo || "未提供文号"} · {citation.section || "正文"}
                   </p>
-                ))}
+                </div>
+                {citation.policyRelations && citation.policyRelations.length > 0 && (
+                  <div className="space-y-1 rounded-md bg-primary/5 p-2 text-primary">
+                    <p className="font-medium">政策关系（新文件 → 被影响文件）</p>
+                    {citation.policyRelations.map((relation, relationIndex) => (
+                      <div key={`${relation.relationType}-${relation.targetDocNo}-${relationIndex}`} className="space-y-0.5">
+                        <p>
+                          政策关系：{relation.sourceDocNo || "当前依据"} → {relation.targetDocNo || "相关文件"}（
+                          {getRelationTypeLabel(relation.relationType)}，置信度：
+                          {getConfidenceLabel(relation.confidence)}）
+                        </p>
+                        {relation.evidenceText && (
+                          <details className="rounded-md bg-background/70 p-2 text-muted-foreground">
+                            <summary className="cursor-pointer font-medium text-foreground">查看依据摘录</summary>
+                            <p className="mt-1 whitespace-pre-wrap break-words leading-relaxed">
+                              {relation.evidenceText}
+                            </p>
+                          </details>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
