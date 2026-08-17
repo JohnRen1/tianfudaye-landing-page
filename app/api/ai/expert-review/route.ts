@@ -9,6 +9,9 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   const userCtx = await requireUser(req);
   if (!userCtx) return fail('AUTH_REQUIRED', '请先登录', 401);
+  const expertContact = userCtx.user.phone?.trim() ?? '';
+  const expertName = userCtx.user.name?.trim() || expertContact;
+  if (!expertContact) return fail('AUTH_REQUIRED', '登录信息缺少手机号，请重新登录后再提交专家意见', 401);
 
   let body: Partial<ExpertReviewRequestDTO>;
   try {
@@ -35,8 +38,8 @@ export async function POST(req: NextRequest) {
     const review = await createExpertReview({
       sessionId,
       qaRecordId: typeof body.qaRecordId === 'string' ? body.qaRecordId : null,
-      expertName: userCtx.user.name?.trim() || userCtx.user.phone,
-      expertContact: userCtx.user.phone,
+      expertName,
+      expertContact,
       question,
       aiAnswer,
       expertAnswer,

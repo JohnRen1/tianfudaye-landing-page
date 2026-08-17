@@ -21,7 +21,18 @@ RAG_URL=""
 AGENT_PORT=""
 AGENT_URL=""
 LANDING_PORT="3000"
-LANDING_URL="http://127.0.0.1:${LANDING_PORT}"
+LANDING_HTTPS="${TAX_LANDING_HTTPS:-0}"
+LANDING_HTTPS_KEY="${TAX_LANDING_HTTPS_KEY:-}"
+LANDING_HTTPS_CERT="${TAX_LANDING_HTTPS_CERT:-}"
+# 绑定所有网卡，允许同一局域网内的手机访问本地二维码链接。
+# 可通过 TAX_LANDING_BIND_HOST 覆盖，例如仅允许本机访问时设为 127.0.0.1。
+LANDING_BIND_HOST="${TAX_LANDING_BIND_HOST:-0.0.0.0}"
+LANDING_SCHEME="http"
+if [[ "${LANDING_HTTPS}" == "1" || "${LANDING_HTTPS}" == "true" ]]; then
+  LANDING_SCHEME="https"
+fi
+LANDING_URL="${LANDING_SCHEME}://127.0.0.1:${LANDING_PORT}"
+LAN_IP="${TAX_LAN_IP:-$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)}"
 
 say() {
   printf '[税务AI本地环境] %s\n' "$1"
@@ -101,7 +112,9 @@ wait_for_url() {
   local attempts="${3:-60}"
   local index=1
   while (( index <= attempts )); do
-    if curl --silent --fail --location --max-time 3 "${url}" >/dev/null 2>&1; then
+    local curl_args=(--silent --fail --location --max-time 3)
+    [[ "${LANDING_HTTPS}" == "1" || "${LANDING_HTTPS}" == "true" ]] && curl_args+=(--insecure)
+    if curl "${curl_args[@]}" "${url}" >/dev/null 2>&1; then
       say "${name} 已就绪：${url}"
       return
     fi
@@ -133,7 +146,17 @@ start_background() {
 
   (
     cd "${workdir}"
-    nohup "$@" >"${log_file}" 2>&1 </dev/null &
+    # 用独立 session 启动服务，避免 Ctrl+C 退出日志查看时终止服务。
+    python3 - "$@" >"${log_file}" 2>&1 </dev/null <<'PY' &
+import os
+import sys
+
+try:
+    os.setsid()
+except PermissionError:
+    pass
+os.execvp(sys.argv[1], sys.argv[1:])
+PY
     printf '%s\n' "$!" >"${pid_file}"
   )
   say "正在启动 ${name}，PID=$(cat "${pid_file}")，日志=${log_file}"
@@ -277,21 +300,36 @@ start_all() {
     || fail "税务 Agent 启动失败，请执行：docker logs ${AGENT_CONTAINER}"
 
   say "4/4 启动落地页（Next.js 自动读取 .env.local）"
+  local landing_args=(dev --hostname "${LANDING_BIND_HOST}" --port "${LANDING_PORT}")
+  if [[ "${LANDING_HTTPS}" == "1" || "${LANDING_HTTPS}" == "true" ]]; then
+    landing_args+=(--experimental-https)
+    if [[ -n "${LANDING_HTTPS_KEY}" && -n "${LANDING_HTTPS_CERT}" ]]; then
+      landing_args+=(
+        --experimental-https-key "${LANDING_HTTPS_KEY}"
+        --experimental-https-cert "${LANDING_HTTPS_CERT}"
+      )
+    fi
+  fi
   start_background \
     "落地页" "${LANDING_ROOT}" "${LANDING_PID_FILE}" "${LANDING_LOG}" \
-    node "${LANDING_ROOT}/node_modules/next/dist/bin/next" dev \
-    --hostname 127.0.0.1 --port "${LANDING_PORT}"
+    node "${LANDING_ROOT}/node_modules/next/dist/bin/next" "${landing_args[@]}"
   wait_for_url "落地页" "${LANDING_URL}/tax-ai" 120 \
     || fail "落地页启动失败，请查看 ${LANDING_LOG}"
 
   printf '\n'
   say "全部启动完成"
   printf '  问答页面：%s/tax-ai\n' "${LANDING_URL}"
+  if [[ -n "${LAN_IP}" ]]; then
+    printf '  手机访问：%s://%s:%s/tax-ai\n' "${LANDING_SCHEME}" "${LAN_IP}" "${LANDING_PORT}"
+  fi
   printf '  Agent文档：%s/docs\n' "${AGENT_URL}"
   printf '  RAG健康：%s/health\n' "${RAG_URL}"
   printf '  查看状态：pnpm run tax-ai:status\n'
-  printf '  查看日志：pnpm run tax-ai:logs\n'
+  printf '  日志跟随：已自动开启，按 Ctrl+C 退出日志查看\n'
+  printf '  稍后查看：pnpm run tax-ai:logs\n'
   printf '  一键停止：pnpm run tax-ai:down\n'
+  printf '\n'
+  show_logs
 }
 
 stop_all() {
@@ -350,13 +388,33 @@ show_status() {
 show_logs() {
   mkdir -p "${RUN_DIR}"
   touch "${RAG_LOG}" "${LANDING_LOG}"
+  local tail_pid=""
+  local agent_log_pid=""
+
+  cleanup_log_followers() {
+    [[ -n "${tail_pid}" ]] && kill "${tail_pid}" 2>/dev/null || true
+    [[ -n "${agent_log_pid}" ]] && kill "${agent_log_pid}" 2>/dev/null || true
+  }
+
+  trap cleanup_log_followers EXIT
+  trap 'cleanup_log_followers; exit 130' INT TERM
+
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1 \
     && docker_container_exists; then
     say "Agent 最近 100 行日志："
     docker logs --tail 100 "${AGENT_CONTAINER}" 2>&1
   fi
-  say "继续查看 RAG API 与落地页日志；按 Ctrl+C 退出，不会停止服务"
-  tail -n 80 -F "${RAG_LOG}" "${LANDING_LOG}"
+  say "继续查看 RAG API、Agent 与落地页日志；按 Ctrl+C 退出，不会停止服务"
+
+  tail -n 80 -F "${RAG_LOG}" "${LANDING_LOG}" &
+  tail_pid="$!"
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1 \
+    && docker_container_exists; then
+    docker logs --tail 0 -f "${AGENT_CONTAINER}" 2>&1 &
+    agent_log_pid="$!"
+  fi
+
+  wait
 }
 
 show_help() {
@@ -371,8 +429,16 @@ show_help() {
   TAX_RAG_ROOT=/path/to/税务法规RAG
   TAX_AGENT_ROOT=/path/to/税务Agent客服
 
+局域网测试：
+  TAX_LAN_IP=192.168.0.133       # 二维码生成时使用的电脑局域网 IP
+  TAX_LANDING_BIND_HOST=0.0.0.0 # 默认允许同一局域网设备访问
+  TAX_LANDING_HTTPS=1            # 启用 Next.js 自签名 HTTPS，浏览器本地验证麦克风
+  TAX_LANDING_HTTPS_KEY=/path/to/dev-key.pem
+  TAX_LANDING_HTTPS_CERT=/path/to/dev-cert.pem
+
 说明：
   脚本只读取各项目现有的 .env/.env.local，不会修改或临时覆盖环境变量。
+  HTTPS 模式首次访问会出现自签名证书提示；电脑可继续访问，手机需要额外信任证书。
   本地链路配置不正确时，脚本会在启动任何服务前停止并给出修改提示。
 EOF
 }

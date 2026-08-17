@@ -68,6 +68,42 @@ describe('POST /api/ai/expert-review', () => {
     expect(createExpertReview).not.toHaveBeenCalled();
   });
 
+  it('rejects saving when current user phone is missing', async () => {
+    vi.mocked(requireUser).mockResolvedValueOnce({
+      userId: 'expert-user-1',
+      user: {
+        id: 'expert-user-1',
+        name: '高琨',
+        phone: '',
+        identity: null,
+        company: null,
+        industry: null,
+        size: null,
+        registeredAt: '2026-08-10T00:00:00.000Z',
+        activeAt: '2026-08-10T00:00:00.000Z',
+        isProfileComplete: true,
+      },
+    });
+    const { POST } = await import('@/app/api/ai/expert-review/route');
+    const response = await POST(
+      new NextRequest('http://localhost/api/ai/expert-review', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'expert-session',
+          question: '政策是否适用？',
+          aiAnswer: '可以适用。',
+          expertAnswer: '目前不能仅凭现有事实确定。',
+          reviewKind: 'incorrect',
+          reason: '排除条件不是充分条件。',
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(createExpertReview).not.toHaveBeenCalled();
+  });
+
   it('saves an independent expert-modified review', async () => {
     vi.mocked(requireUser).mockResolvedValueOnce({
       userId: 'expert-user-1',

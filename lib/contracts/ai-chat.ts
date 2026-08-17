@@ -186,6 +186,13 @@ export interface ExpertReviewResponseDTO {
   createdAt: string;
 }
 
+export interface SpeechToTextResponseDTO {
+  text: string;
+  provider: 'tencent_asr';
+  requestId: string;
+  audioDuration: number | null;
+}
+
 /**
  * AiChatResponseDTO — 落地页 AI 问答响应体
  * 对应 POST /api/ai/chat 的成功响应 data 字段。

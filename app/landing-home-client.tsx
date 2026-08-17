@@ -52,6 +52,19 @@ function QrCodeDisabledNotice() {
 
 type ActivityUnavailableStatus = Extract<ActivityLandingDetailDTO['status'], 'draft' | 'closed'>;
 
+function withQrScanTimeout<T>(request: Promise<T>, timeoutMs = 10000): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error('二维码验证超时')), timeoutMs);
+    request.then((value) => {
+      window.clearTimeout(timer);
+      resolve(value);
+    }).catch((error: unknown) => {
+      window.clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
+
 function ActivityStatusNotice({ activity, status }: { activity: ActivityLandingDetailDTO; status: ActivityUnavailableStatus }) {
   const isDraft = status === 'draft';
   const Icon = isDraft ? Hourglass : CalendarClock;
@@ -119,10 +132,13 @@ export function LandingHomeClient({ fallback }: LandingHomeClientProps) {
           persistTrackingContext({ qrId, activityId, source: activityId ? 'activity' : 'home' });
           const scanSessionId = getOrCreateQrScanSessionId(qrId);
           try {
-            const result = await trackQrScan(qrId, scanSessionId, navigator.userAgent);
+            const result = await withQrScanTimeout(trackQrScan(qrId, scanSessionId, navigator.userAgent));
             if (result.activity) {
               persistTrackingContext({ qrId, activityId: result.activity.id, source: 'activity' });
               setActivity(result.activity);
+            } else {
+              // 有效的公司主页码不绑定活动，验证完成后直接展示通用首页。
+              setActivity(null);
             }
           } catch (err: unknown) {
             // 二维码不存在或已停用 → 展示停用提示页，不降级到通用首页

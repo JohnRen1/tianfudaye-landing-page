@@ -6,7 +6,7 @@
 
 import { apiPost } from './client';
 import type { AiChatRequestDTO, AiChatResponseDTO } from '../contracts/ai-chat';
-import type { ExpertReviewRequestDTO, ExpertReviewResponseDTO } from '../contracts/ai-chat';
+import type { ExpertReviewRequestDTO, ExpertReviewResponseDTO, SpeechToTextResponseDTO } from '../contracts/ai-chat';
 import { getClientAuthToken } from '../client-auth';
 
 type AiChatStreamEvent =
@@ -120,4 +120,27 @@ export async function saveExpertReview(
 ): Promise<ExpertReviewResponseDTO> {
   const response = await apiPost<ExpertReviewResponseDTO>('/api/ai/expert-review', request);
   return response;
+}
+
+export async function transcribeSpeech(audio: Blob): Promise<SpeechToTextResponseDTO> {
+  const formData = new FormData();
+  formData.set('audio', audio, 'speech.wav');
+  const headers = new Headers();
+  const token = getClientAuthToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+
+  const response = await fetch('/api/ai/speech-to-text', {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  const body = await response.json().catch(() => null) as
+    | { success: true; data: SpeechToTextResponseDTO }
+    | { success: false; error: { message: string } }
+    | null;
+  if (!response.ok || !body?.success) {
+    throw new Error(body && !body.success ? body.error.message : `语音识别失败：HTTP ${response.status}`);
+  }
+  return body.data;
 }

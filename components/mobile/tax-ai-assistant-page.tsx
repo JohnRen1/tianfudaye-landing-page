@@ -9,8 +9,11 @@ import {
   ExternalLink,
   Headphones,
   Loader2,
+  Mic,
+  MicOff,
   Send,
   Sparkles,
+  Square,
   User,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -18,7 +21,7 @@ import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LoginModal } from "./login-modal";
-import { saveExpertReview, sendMessageStream } from "@/lib/api/ai-chat";
+import { saveExpertReview, sendMessageStream, transcribeSpeech } from "@/lib/api/ai-chat";
 import { getExpertStatus } from "@/lib/api/auth";
 import type { AiAnswerBodyDTO, AiChatRequestDTO, ChatMessageDTO, AiCitationDTO, PolicyRelationDTO } from "@/lib/contracts/ai-chat";
 import { getClientAuthToken, hydrateClientAuthFromServer, isClientLoggedIn } from "@/lib/client-auth";
@@ -32,10 +35,18 @@ import {
 const quickQuestions = [
   "员工退休，公司需要怎么处理？",
   "我们能享受哪些税收优惠？",
-  "收到发票后应该怎么处理？",
+  "请详细说明收到发票后的处理流程",
   "公转私一般有哪些税务风险？",
 ];
 const showAiDebug = process.env.NEXT_PUBLIC_AI_DEBUG === "true";
+const VOICE_SAMPLE_RATE = 16000;
+const MAX_VOICE_SECONDS = 60;
+
+type WebAudioWindow = Window & {
+  webkitAudioContext?: typeof AudioContext;
+};
+
+type VoiceSupport = "checking" | "supported" | "insecure" | "unsupported";
 
 function isSafeInternalPath(value: string | null): value is string {
   return Boolean(value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\"));
@@ -123,6 +134,69 @@ function persistChatState(
     savedAt: Date.now(),
   };
   sessionStorage.setItem(storageKey, JSON.stringify(storedState));
+}
+
+function mergeAudioBuffers(chunks: Float32Array[]): Float32Array {
+  const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
+  const result = new Float32Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
+}
+
+function downsampleAudioBuffer(buffer: Float32Array, inputSampleRate: number, outputSampleRate: number): Float32Array {
+  if (inputSampleRate === outputSampleRate) return buffer;
+  if (inputSampleRate < outputSampleRate) return buffer;
+
+  const ratio = inputSampleRate / outputSampleRate;
+  const outputLength = Math.floor(buffer.length / ratio);
+  const result = new Float32Array(outputLength);
+  for (let index = 0; index < outputLength; index += 1) {
+    const start = Math.floor(index * ratio);
+    const end = Math.min(Math.floor((index + 1) * ratio), buffer.length);
+    let sum = 0;
+    for (let inputIndex = start; inputIndex < end; inputIndex += 1) {
+      sum += buffer[inputIndex];
+    }
+    result[index] = sum / Math.max(1, end - start);
+  }
+  return result;
+}
+
+function encodeWav(samples: Float32Array, sampleRate: number): Blob {
+  const dataLength = samples.length * 2;
+  const buffer = new ArrayBuffer(44 + dataLength);
+  const view = new DataView(buffer);
+  const writeString = (offset: number, value: string) => {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset + index, value.charCodeAt(index));
+    }
+  };
+
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + dataLength, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, "data");
+  view.setUint32(40, dataLength, true);
+
+  let offset = 44;
+  for (const sample of samples) {
+    const clamped = Math.max(-1, Math.min(1, sample));
+    view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
+    offset += 2;
+  }
+  return new Blob([view], { type: "audio/wav" });
 }
 
 function MarkdownAnswer({ content }: { content: string }) {
@@ -484,8 +558,31 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
   const [isReviewLocked, setIsReviewLocked] = useState(false);
   const [isChatStateRestored, setIsChatStateRestored] = useState(false);
   const [chatStateStorageKey, setChatStateStorageKey] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [voiceSupport, setVoiceSupport] = useState<VoiceSupport>("checking");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Float32Array[]>([]);
+  const recordingStartedAtRef = useRef<number>(0);
+
+  const cleanupVoiceInput = async () => {
+    audioProcessorRef.current?.disconnect();
+    audioSourceRef.current?.disconnect();
+    audioStreamRef.current?.getTracks().forEach((track) => track.stop());
+    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      await audioContextRef.current.close().catch(() => undefined);
+    }
+    audioProcessorRef.current = null;
+    audioSourceRef.current = null;
+    audioStreamRef.current = null;
+    audioContextRef.current = null;
+    recordingStartedAtRef.current = 0;
+  };
 
   useEffect(() => {
     if (expertMode) {
@@ -532,6 +629,23 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
+  useEffect(() => {
+    return () => {
+      void cleanupVoiceInput();
+    };
+  }, []);
+
+  useEffect(() => {
+    const audioContextConstructor = window.AudioContext || (window as WebAudioWindow).webkitAudioContext;
+    if (!window.isSecureContext) {
+      setVoiceSupport("insecure");
+    } else if (!navigator.mediaDevices?.getUserMedia || !audioContextConstructor) {
+      setVoiceSupport("unsupported");
+    } else {
+      setVoiceSupport("supported");
+    }
+  }, []);
+
   const requireLogin = () => {
     if (expertMode) return true;
     if (isLoggedIn) return true;
@@ -561,6 +675,78 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
     if (!await isCurrentUserExpert()) return;
     const targetPath = `/tax-ai-pro${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
     router.replace(targetPath);
+  };
+
+  const startVoiceInput = async () => {
+    if (isThinking || isReviewLocked || isTranscribing || !requireLogin()) return;
+    if (voiceSupport === "insecure") {
+      setErrorMessage("当前页面不是 HTTPS，暂时无法使用麦克风，请改用文字输入。");
+      return;
+    }
+    if (voiceSupport !== "supported") {
+      setErrorMessage("当前浏览器不支持语音输入，请改用文字输入。");
+      return;
+    }
+
+    try {
+      setErrorMessage(null);
+      audioChunksRef.current = [];
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const AudioContextConstructor = window.AudioContext || (window as WebAudioWindow).webkitAudioContext;
+      const audioContext = new AudioContextConstructor();
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      processor.onaudioprocess = (event) => {
+        audioChunksRef.current.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+        if (Date.now() - recordingStartedAtRef.current >= MAX_VOICE_SECONDS * 1000) {
+          void stopVoiceInput();
+        }
+      };
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
+      audioContextRef.current = audioContext;
+      audioSourceRef.current = source;
+      audioProcessorRef.current = processor;
+      audioStreamRef.current = stream;
+      recordingStartedAtRef.current = Date.now();
+      setIsRecording(true);
+    } catch {
+      await cleanupVoiceInput();
+      setIsRecording(false);
+      setErrorMessage("无法使用麦克风，请检查浏览器麦克风权限。");
+    }
+  };
+
+  const stopVoiceInput = async () => {
+    if (!isRecording || isTranscribing) return;
+    const audioContext = audioContextRef.current;
+    const inputSampleRate = audioContext?.sampleRate ?? VOICE_SAMPLE_RATE;
+    const recordedMs = Date.now() - recordingStartedAtRef.current;
+    const chunks = [...audioChunksRef.current];
+    setIsRecording(false);
+    setIsTranscribing(true);
+    await cleanupVoiceInput();
+
+    try {
+      if (recordedMs < 500 || chunks.length === 0) {
+        setErrorMessage("录音时间太短，请说完整问题后再试。");
+        return;
+      }
+      const merged = mergeAudioBuffers(chunks);
+      const downsampled = downsampleAudioBuffer(merged, inputSampleRate, VOICE_SAMPLE_RATE);
+      const wavBlob = encodeWav(downsampled, VOICE_SAMPLE_RATE);
+      const result = await transcribeSpeech(wavBlob);
+      setInputValue((prev) => {
+        const prefix = prev.trim();
+        return prefix ? `${prefix} ${result.text}` : result.text;
+      });
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "语音识别失败，请改用文字输入。");
+    } finally {
+      setIsTranscribing(false);
+      audioChunksRef.current = [];
+    }
   };
 
   const submitQuestion = async (question: string) => {
@@ -754,26 +940,76 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
 
       <div className="fixed bottom-0 left-1/2 right-auto w-full max-w-[390px] -translate-x-1/2 border-t border-border bg-card/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-lg backdrop-blur">
         <div className="mx-auto flex max-w-[390px] gap-2">
+          <Button
+            variant={isRecording ? "destructive" : "outline"}
+            className="h-12 w-12 shrink-0 rounded-xl"
+            onClick={() => {
+              if (isRecording) {
+                void stopVoiceInput();
+              } else {
+                void startVoiceInput();
+              }
+            }}
+            disabled={isThinking || isReviewLocked || isTranscribing || voiceSupport !== "supported"}
+            aria-label={isRecording ? "结束语音输入" : "语音输入"}
+            title={
+              isRecording
+                ? "结束语音输入"
+                : voiceSupport === "insecure"
+                  ? "语音输入需要 HTTPS，请改用文字输入"
+                  : voiceSupport === "unsupported"
+                    ? "当前浏览器不支持语音输入，请改用文字输入"
+                    : "语音输入"
+            }
+          >
+            {isTranscribing ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : isRecording ? (
+              <Square className="h-5 w-5" />
+            ) : voiceSupport === "supported" ? (
+              <Mic className="h-5 w-5" />
+            ) : (
+              <MicOff className="h-5 w-5 text-muted-foreground" />
+            )}
+          </Button>
           <Input
-            placeholder={isReviewLocked ? "该回答已进入修正，请重新开始会话" : "请输入消息"}
+            placeholder={
+              isReviewLocked
+                ? "该回答已进入修正，请重新开始会话"
+                : isRecording
+                  ? "正在听，请说出您的问题"
+                    : isTranscribing
+                      ? "正在识别语音..."
+                    : "直接描述问题；需要展开可说“详细说明”"
+            }
             value={inputValue}
-            disabled={isReviewLocked}
+            disabled={isReviewLocked || isTranscribing}
             onChange={(event) => setInputValue(event.target.value)}
             onFocus={requireLogin}
             onKeyDown={(event) => {
               if (event.key === "Enter") submitQuestion(inputValue);
             }}
-            className="h-12 rounded-xl"
+            className="h-12 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl text-base placeholder:text-[10px] placeholder:text-muted-foreground/55 sm:placeholder:text-xs"
           />
           <Button
             className="h-12 w-12 shrink-0 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90"
             onClick={() => submitQuestion(inputValue)}
-            disabled={isThinking || isReviewLocked}
+            disabled={isThinking || isReviewLocked || isRecording || isTranscribing}
             aria-label="发送"
           >
             {isThinking ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
           </Button>
         </div>
+        {voiceSupport === "insecure" && (
+          <p className="mx-auto mt-2 max-w-[390px] text-xs text-muted-foreground">
+            当前为局域网 HTTP 地址，语音输入需要 HTTPS；现在可以直接使用文字输入。
+          </p>
+        )}
+        {voiceSupport === "unsupported" && (
+          <p className="mx-auto mt-2 max-w-[390px] text-xs text-muted-foreground">
+            当前浏览器不支持语音输入，可以直接使用文字输入。
+          </p>
+        )}
         <div className="mx-auto mt-2 flex max-w-[390px] items-center justify-center gap-1 text-xs text-muted-foreground">
           <AlertTriangle className="h-3.5 w-3.5" />
           AI 可能出错，请核对重要信息
