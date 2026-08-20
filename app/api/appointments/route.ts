@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
     sourceQrId,
     sourceActivityId,
     sourceLeadId,
+    sourceQaRecordId,
   } = body as AppointmentCreateDTO & Record<string, unknown>;
   logAppointmentApi('request parsed', {
     topic,
@@ -78,6 +79,7 @@ export async function POST(req: NextRequest) {
     sourceQrId,
     sourceActivityId,
     sourceLeadId,
+    sourceQaRecordId,
   });
 
   // 留言咨询类型（message）不校验 topic，其余类型必须有合法 topic
@@ -162,6 +164,7 @@ export async function POST(req: NextRequest) {
       sourceQrId,
       sourceActivityId,
       sourceLeadId,
+      sourceQaRecordId,
     };
     logAppointmentApi('create start', {
       userId,

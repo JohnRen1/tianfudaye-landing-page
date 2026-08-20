@@ -5,47 +5,6 @@ import type {
   HomepageSurveySubmitResponseDTO,
 } from '../contracts/homepage-survey';
 
-// ——— 沙龙投票线索同步（fire-and-forget）———
-async function upsertSurveyLead(userId: string, sourceQrId?: string | null): Promise<void> {
-  try {
-    const client = createServiceClient();
-    const tag = '沙龙投票';
-    const addScore = 20;
-
-    const { data: existing } = await client
-      .from('leads')
-      .select('id, score, tags')
-      .eq('user_id', userId)
-      .not('status', 'in', '("converted","invalid")')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (existing) {
-      const nextScore = ((existing.score as number) ?? 0) + addScore;
-      const prevTags = (existing.tags as string[]) ?? [];
-      const nextTags = prevTags.includes(tag) ? prevTags : [...prevTags, tag];
-      const level =
-        nextScore >= 100 ? 'strong'
-        : nextScore >= 70 ? 'high'
-        : nextScore >= 40 ? 'potential'
-        : 'normal';
-      await client.from('leads').update({ score: nextScore, level, tags: nextTags }).eq('id', existing.id as string);
-    } else {
-      const { data: newLead } = await client
-        .from('leads')
-        .insert({ user_id: userId, qr_code_id: sourceQrId ?? null, tags: [tag], score: addScore, level: 'normal', status: 'new' })
-        .select('id')
-        .single();
-      if (newLead) {
-        await client.from('users').update({ lead_status: 'new' }).eq('id', userId);
-      }
-    }
-  } catch (err) {
-    console.error('[upsertSurveyLead] failed silently', err);
-  }
-}
-
 function required(value: string | undefined, label: string): string {
   const normalized = value?.trim() ?? '';
   if (!normalized) throw new Error(`${label}不能为空`);
@@ -189,8 +148,7 @@ export async function submitHomepageSurvey(userId: string, body: HomepageSurveyS
     })
     .eq('id', userId);
 
-  // 自动同步线索（fire-and-forget）
-  void upsertSurveyLead(userId, body.sourceQrId ?? null);
+  // 投票只保留行为记录，不自动进入线索池。
 
   return {
     id: submissionId,

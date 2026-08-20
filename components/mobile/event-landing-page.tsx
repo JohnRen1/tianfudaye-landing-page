@@ -26,6 +26,8 @@ import { LoginModal } from "./login-modal";
 import { hydrateClientAuthFromServer } from "@/lib/client-auth";
 import { claimMaterial } from "@/lib/api/materials";
 import type { MaterialClaimStatus } from "@/lib/contracts/material";
+import type { LandingActivityType } from "@/lib/contracts/tracking";
+import { ACTIVITY_LANDING_DEFAULTS, displayActivityField, getActivityCoverPresentation } from "@/lib/activity-presentation";
 
 interface EventMaterial {
   id: string;
@@ -40,13 +42,14 @@ interface EventMaterial {
 interface EventLandingPageProps {
   eventData?: {
     id?: string;
-    title: string;
-    speaker: string;
-    speakerTitle: string;
-    date: string;
-    time: string;
-    location: string;
-    description: string;
+    title?: string | null;
+    type?: LandingActivityType | null;
+    speaker?: string | null;
+    speakerTitle?: string | null;
+    date?: string | null;
+    time?: string | null;
+    location?: string | null;
+    description?: string | null;
     coverImage?: string;
     materials?: EventMaterial[];
     checkinWindowStatus?: 'open' | 'not_started' | 'ended' | 'force_closed' | 'activity_not_found';
@@ -74,6 +77,7 @@ export function EventLandingPage({
   const [alreadyCheckedIn, setAlreadyCheckedIn] = useState(!!eventData?.alreadyCheckedIn);
   const isLoggedInRef = useRef(false);
   const materials = eventData?.materials ?? [];
+  const coverPresentation = getActivityCoverPresentation(eventData?.type);
   const isGeneralLanding = !showActivitySections;
   const isCheckinOpen = showActivitySections && eventData?.checkinWindowStatus === 'open' && !!eventData?.checkinQrId;
   // 活动已结束或被强制关闭时，报名入口无意义，改为预约顾问
@@ -233,20 +237,23 @@ export function EventLandingPage({
               <div className="absolute bottom-10 right-10 h-16 w-16 rounded-full bg-accent/20" />
             </div>
 
-            <div className="relative px-4 pb-8 pt-12">
+            <div className="relative px-4 pb-8 pt-6">
+              <p className="mb-5 text-2xl font-bold tracking-[0.14em] text-white">
+                天赋领航
+              </p>
               {/* 活动标签 */}
               <div className="mb-4 flex items-center gap-2">
                 <Badge className="bg-accent text-accent-foreground hover:bg-accent/90">
-                  线下沙龙
+                  {coverPresentation.primaryTag}
                 </Badge>
                 <Badge variant="outline" className="border-white/30 text-white">
-                  免费参加
+                  {coverPresentation.secondaryTag}
                 </Badge>
               </div>
 
               {/* 活动标题 */}
               <h1 className="mb-4 text-xl font-bold leading-tight text-balance">
-                {eventData?.title}
+                {displayActivityField(eventData?.title, ACTIVITY_LANDING_DEFAULTS.title)}
               </h1>
 
               {/* 活动信息 */}
@@ -254,20 +261,20 @@ export function EventLandingPage({
                 <div className="flex items-center gap-2">
                   <User className="h-4 w-4" />
                   <span>
-                    {eventData?.speaker} · {eventData?.speakerTitle}
+                    {displayActivityField(eventData?.speaker, ACTIVITY_LANDING_DEFAULTS.speaker)} · {displayActivityField(eventData?.speakerTitle, ACTIVITY_LANDING_DEFAULTS.speakerTitle)}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4" />
-                  <span>{eventData?.date}</span>
+                  <span>{displayActivityField(eventData?.date, ACTIVITY_LANDING_DEFAULTS.date)}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4" />
-                  <span>{eventData?.time}</span>
+                  <span>{displayActivityField(eventData?.time, ACTIVITY_LANDING_DEFAULTS.time)}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <MapPin className="h-4 w-4" />
-                  <span>{eventData?.location}</span>
+                  <span>{displayActivityField(eventData?.location, ACTIVITY_LANDING_DEFAULTS.location)}</span>
                 </div>
               </div>
             </div>
@@ -282,7 +289,7 @@ export function EventLandingPage({
                   活动简介
                 </h2>
                 <p className="text-sm leading-relaxed text-muted-foreground">
-                  {eventData?.description}
+                  {displayActivityField(eventData?.description, ACTIVITY_LANDING_DEFAULTS.description)}
                 </p>
               </CardContent>
             </Card>

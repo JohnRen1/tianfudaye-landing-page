@@ -348,7 +348,7 @@ function AiAnswerCard({
   onReviewStarted,
 }: {
   answer: AiAnswerBodyDTO;
-  onSupportClick: () => void;
+  onSupportClick: (qaRecordId: string | null) => void;
   expertMode?: boolean;
   question?: string;
   sessionId: string | null;
@@ -523,7 +523,7 @@ function AiAnswerCard({
             variant="ghost"
             size="sm"
             className="h-8 px-2 text-xs text-primary"
-            onClick={onSupportClick}
+            onClick={() => onSupportClick(qaRecordId)}
           >
             <Headphones className="mr-1.5 h-3.5 w-3.5" />
             联系人工客服
@@ -658,12 +658,13 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
   const requestedBackPath = searchParams.get("returnTo");
   const backPath = isSafeInternalPath(requestedBackPath) ? requestedBackPath : fallbackBackPath;
   const currentPath = `${expertMode ? "/tax-ai-pro" : "/tax-ai"}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
-  const openSupport = () => {
+  const openSupport = (qaRecordId: string | null) => {
     if (chatStateStorageKey !== null) {
       persistChatState(chatStateStorageKey, messages, sessionId, inputValue);
     }
     const supportUrl = new URL(buildTrackedPath("/support"), "https://local.invalid");
     supportUrl.searchParams.set("returnTo", currentPath);
+    if (qaRecordId) supportUrl.searchParams.set("qaRecordId", qaRecordId);
     router.push(`${supportUrl.pathname}${supportUrl.search}`);
   };
   const restoreChatStateForCurrentUser = () => {

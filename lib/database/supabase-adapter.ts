@@ -95,6 +95,18 @@ async function incrementActivityCounter(
   }
 }
 
+async function incrementQrCounter(
+  client: ReturnType<typeof createSupabaseServiceClient>,
+  qrCodeId: string,
+  column: 'registers' | 'leads',
+): Promise<void> {
+  const { error } = await client.rpc('increment_qr_counter', {
+    p_qr_code_id: qrCodeId,
+    p_column: column,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function getCurrentUserById(userId: string): Promise<CurrentUserDTO | null> {
   const serviceClient = createServiceClient();
   const { data: row } = await serviceClient
@@ -484,16 +496,12 @@ export async function submitAssessment(
     await incrementActivityCounter(serviceClient, payload.sourceActivityId, 'assessments');
   }
 
-  // 自动同步线索（已登录用户才创建，fire-and-forget）
+  // 仅测评触发线索：高风险进入高优先级，中风险进入普通培育，低风险仅保留报告。
   if (userId) {
-    const eventType =
-      riskLevel === 'high' ? 'assessment_high'
-      : riskLevel === 'medium' ? 'assessment_medium'
-      : 'assessment_low';
-    void upsertLeadFromEvent({
+    await upsertLeadFromAssessment({
       userId,
-      eventType,
       activityId: payload.sourceActivityId ?? null,
+      qrCodeId: payload.sourceQrId ?? null,
       riskLevel: riskLevel as RiskLevel,
     });
   }
@@ -623,6 +631,19 @@ export async function createAppointment(params: {
     status: 'pending',
   };
 
+  if (typeof params.body.sourceQaRecordId === 'string' && params.body.sourceQaRecordId) {
+    const { data: qaRecord, error: qaError } = await serviceClient
+      .from('qa_records')
+      .select('id')
+      .eq('id', params.body.sourceQaRecordId)
+      .eq('user_id', params.userId)
+      .maybeSingle();
+    if (qaError || !qaRecord) {
+      throw new Error('来源问答记录不存在或不属于当前用户');
+    }
+    appointmentInsert.source_qa_record_id = params.body.sourceQaRecordId;
+  }
+
   if (typeof params.body.company === 'string' && params.body.company.trim()) {
     appointmentInsert.company = params.body.company.trim();
   }
@@ -677,9 +698,13 @@ export async function createAppointment(params: {
   }
   await serviceClient.from('users').update(userUpdate).eq('id', params.userId);
 
+  // 只有用户明确预约顾问或咨询客服才进入紧急线索队列；活动报名本身只保留报名记录。
+  const leadTrigger = params.body.appointmentType === 'consult' || params.body.appointmentType === 'message';
+  const leadStatus = params.body.appointmentType === 'consult' ? 'appointed' : 'pending';
+  const leadTag = params.body.appointmentType === 'consult' ? '紧急-预约顾问' : '紧急-客服咨询';
   let leadId: string | null = null;
 
-  if (typeof params.body.sourceLeadId === 'string' && params.body.sourceLeadId) {
+  if (leadTrigger && typeof params.body.sourceLeadId === 'string' && params.body.sourceLeadId) {
     const { data: specifiedLead } = await serviceClient
       .from('leads')
       .select('id, status')
@@ -689,15 +714,23 @@ export async function createAppointment(params: {
 
     if (specifiedLead) {
       leadId = specifiedLead.id as string;
-      await serviceClient.from('leads').update({ status: 'appointed' }).eq('id', leadId);
+      const { data: lead } = await serviceClient.from('leads').select('tags, status').eq('id', leadId).single();
+      const tags = (lead?.tags as string[] | null) ?? [];
+      const nextLeadStatus = params.body.appointmentType === 'message' && typeof lead?.status === 'string' && lead.status !== 'new'
+        ? lead?.status
+        : leadStatus;
+      await serviceClient.from('leads').update({
+        status: nextLeadStatus,
+        tags: tags.includes(leadTag) ? tags : [...tags, leadTag],
+      }).eq('id', leadId);
       logAssessmentDb('appointment source lead linked', { appointmentId, leadId });
     }
   }
 
-  if (!leadId) {
+  if (leadTrigger && !leadId) {
     const { data: existingLead } = await serviceClient
       .from('leads')
-      .select('id')
+      .select('id, tags, status')
       .eq('user_id', params.userId)
       .not('status', 'in', '("converted","invalid")')
       .order('created_at', { ascending: false })
@@ -706,18 +739,26 @@ export async function createAppointment(params: {
 
     if (existingLead) {
       leadId = existingLead.id as string;
-      await serviceClient.from('leads').update({ status: 'appointed' }).eq('id', leadId);
+      const tags = (existingLead.tags as string[] | null) ?? [];
+      const nextLeadStatus = params.body.appointmentType === 'message' && typeof existingLead.status === 'string' && existingLead.status !== 'new'
+        ? existingLead.status
+        : leadStatus;
+      await serviceClient.from('leads').update({
+        status: nextLeadStatus,
+        tags: tags.includes(leadTag) ? tags : [...tags, leadTag],
+      }).eq('id', leadId);
       logAssessmentDb('appointment existing lead linked', { appointmentId, leadId });
     } else {
       const leadInsert: Record<string, unknown> = {
         user_id: params.userId,
-        status: 'appointed',
+        status: leadStatus,
+        tags: [leadTag],
       };
       if (typeof params.body.sourceActivityId === 'string' && params.body.sourceActivityId) {
-        leadInsert.source_activity_id = params.body.sourceActivityId;
+        leadInsert.activity_id = params.body.sourceActivityId;
       }
       if (typeof params.body.sourceQrId === 'string' && params.body.sourceQrId) {
-        leadInsert.source_qr_id = params.body.sourceQrId;
+        leadInsert.qr_code_id = params.body.sourceQrId;
       }
 
       const { data: newLead } = await serviceClient
@@ -726,14 +767,19 @@ export async function createAppointment(params: {
         .select('id')
         .single();
 
-      if (newLead) leadId = newLead.id as string;
+      if (newLead) {
+        leadId = newLead.id as string;
+        if (typeof params.body.sourceQrId === 'string' && params.body.sourceQrId) {
+          await incrementQrCounter(serviceClient, params.body.sourceQrId, 'leads');
+        }
+      }
       logAssessmentDb('appointment new lead created', { appointmentId, leadId, leadInsert });
     }
   }
 
   if (leadId) {
     await serviceClient.from('appointments').update({ lead_id: leadId }).eq('id', appointmentId);
-    await serviceClient.from('users').update({ lead_status: 'appointed' }).eq('id', params.userId);
+    await serviceClient.from('users').update({ lead_status: leadStatus }).eq('id', params.userId);
     logAssessmentDb('appointment lead status synced', { appointmentId, leadId, userId: params.userId });
   }
 
@@ -829,16 +875,7 @@ export async function createQaRecord(params: {
     await incrementActivityCounter(serviceClient, params.activityId, 'ai_questions');
   }
 
-  // 自动同步线索（已登录用户才创建，fire-and-forget）
-  if (params.userId) {
-    const eventType = params.answer.riskLevel === 'high' ? 'qa_high_risk' : 'qa_normal';
-    void upsertLeadFromEvent({
-      userId: params.userId,
-      eventType,
-      activityId: params.activityId,
-      riskLevel: params.answer.riskLevel as RiskLevel,
-    });
-  }
+  // AI 问答只保留问答行为记录。是否升级为紧急线索，由用户后续预约顾问或咨询客服决定。
 
   return {
     qaRecordId: record.id as string,
@@ -1171,17 +1208,18 @@ function mapTrackingActivity(
   checkinQrId?: string | null,
   alreadyCheckedIn?: boolean,
 ): TrackingActivityDTO {
-  const startAt = row.start_at as string;
+  const startAt = (row.start_at as string | null) ?? null;
   const endAt = (row.end_at as string | null) ?? null;
-  const timeStart = formatShanghaiTime(startAt);
+  const timeStart = startAt ? formatShanghaiTime(startAt) : '';
 
   return {
     id: row.id as string,
     name: row.name as string,
+    type: (row.type as TrackingActivityDTO['type']) ?? null,
     speaker: row.teacher as string,
     speakerTitle: (row.speaker_title as string) ?? '',
-    date: formatShanghaiDate(startAt),
-    time: endAt ? `${timeStart} - ${formatShanghaiTime(endAt)}` : timeStart,
+    date: startAt ? formatShanghaiDate(startAt) : '',
+    time: startAt && endAt ? `${timeStart} - ${formatShanghaiTime(endAt)}` : timeStart,
     location: row.place as string,
     description: (row.description as string) ?? '',
     coverImage: (row.cover_image as string | null) ?? null,
@@ -1201,7 +1239,7 @@ export async function getActivityLandingDetail(
   const serviceClient = createServiceClient();
   const { data: activity, error } = await serviceClient
     .from('activities')
-    .select('id, name, start_at, end_at, place, teacher, speaker_title, description, cover_image, status')
+    .select('id, name, type, start_at, end_at, place, teacher, speaker_title, description, cover_image, status')
     .eq('id', activityId)
     .single();
 
@@ -1255,9 +1293,9 @@ export async function trackQrScan(params: {
   const { data: qrCode, error } = await serviceClient
     .from('qr_codes')
     .select(`
-      id, name, type, status, invite_code, activity_id, advisor_id,
+      id, name, type, status, invite_code, activity_id, advisor_id, valid_from, valid_to,
       activities!activity_id(
-        id, name, theme, start_at, end_at, place, teacher, speaker_title,
+        id, name, theme, type, start_at, end_at, place, teacher, speaker_title,
         description, cover_image, status
       )
     `)
@@ -1267,65 +1305,20 @@ export async function trackQrScan(params: {
 
   if (error || !qrCode) return null;
 
-  let shouldIncrementScan = true;
-  if (params.sessionId) {
-    const { data: existingEvent, error: existingEventError } = await serviceClient
-      .from('qr_scan_events')
-      .select('id')
-      .eq('qr_code_id', params.qrCodeId)
-      .eq('session_id', params.sessionId)
-      .maybeSingle();
-
-    if (existingEventError) throw new Error(existingEventError.message);
-    shouldIncrementScan = !existingEvent;
+  const now = Date.now();
+  const validFrom = (qrCode.valid_from as string | null) ?? null;
+  const validTo = (qrCode.valid_to as string | null) ?? null;
+  if ((validFrom && new Date(validFrom).getTime() > now) || (validTo && new Date(validTo).getTime() < now)) {
+    return null;
   }
 
-  if (shouldIncrementScan) {
-    const { error: scanEventError } = await serviceClient.from('qr_scan_events').insert({
-      qr_code_id: params.qrCodeId,
-      user_id: params.userId ?? null,
-      user_agent: params.userAgent ?? null,
-      session_id: params.sessionId ?? null,
-    });
-
-    if (scanEventError) {
-      if (scanEventError.code === '23505' && params.sessionId) {
-        shouldIncrementScan = false;
-      } else {
-        throw new Error(scanEventError.message);
-      }
-    }
-  }
-
-  if (shouldIncrementScan) {
-    const { data: currentQr } = await serviceClient
-      .from('qr_codes')
-      .select('scans')
-      .eq('id', params.qrCodeId)
-      .single();
-
-    await serviceClient
-      .from('qr_codes')
-      .update({ scans: ((currentQr?.scans as number | null) ?? 0) + 1 })
-      .eq('id', params.qrCodeId);
-
-    if (qrCode.activity_id) {
-      const { data: activityQrCodes } = await serviceClient
-        .from('qr_codes')
-        .select('scans')
-        .eq('activity_id', qrCode.activity_id as string);
-
-      const activityScan = ((activityQrCodes ?? []) as Record<string, unknown>[]).reduce(
-        (total, item) => total + ((item.scans as number | null) ?? 0),
-        0,
-      );
-
-      await serviceClient
-        .from('activities')
-        .update({ scan: activityScan })
-        .eq('id', qrCode.activity_id as string);
-    }
-  }
+  const { error: scanError } = await serviceClient.rpc('record_qr_scan', {
+    p_qr_code_id: params.qrCodeId,
+    p_session_id: params.sessionId ?? null,
+    p_user_id: params.userId ?? null,
+    p_user_agent: params.userAgent ?? null,
+  });
+  if (scanError) throw new Error(scanError.message);
 
   let advisorName: string | null = null;
   if (qrCode.advisor_id) {
@@ -1520,6 +1513,9 @@ export async function loginOrCreateUserByPhone(params: {
         console.error('[loginOrCreateUserByPhone] incrementActivityCounter failed:', counterErr instanceof Error ? counterErr.message : counterErr);
       }
     }
+    if (params.sourceQrId) {
+      await incrementQrCounter(serviceClient, params.sourceQrId, 'registers');
+    }
   }
 
   const { data: userData } = await serviceClient
@@ -1652,12 +1648,15 @@ export async function getCheckinPageData(
   const windowStatus: CheckinWindowStatus = (windowResult as CheckinWindowStatus | null) ?? 'activity_not_found';
 
   // 计算窗口时间（展示用）
-  const startAt = new Date(activity.start_at as string);
-  const endAt = activity.end_at ? new Date(activity.end_at as string) : new Date(startAt.getTime() + 3 * 60 * 60 * 1000);
+  const startAtValue = (activity.start_at as string | null) ?? null;
+  const startAt = startAtValue ? new Date(startAtValue) : null;
+  const endAt = startAt
+    ? (activity.end_at ? new Date(activity.end_at as string) : new Date(startAt.getTime() + 3 * 60 * 60 * 1000))
+    : null;
   const beforeMin = (activity.checkin_window_before_minutes as number) ?? 30;
   const afterMin = (activity.checkin_window_after_minutes as number) ?? 60;
-  const windowOpenAt = new Date(startAt.getTime() - beforeMin * 60 * 1000);
-  const windowCloseAt = new Date(endAt.getTime() + afterMin * 60 * 1000);
+  const windowOpenAt = startAt ? new Date(startAt.getTime() - beforeMin * 60 * 1000) : null;
+  const windowCloseAt = endAt ? new Date(endAt.getTime() + afterMin * 60 * 1000) : null;
 
   // 查当前用户是否已签到
   let alreadyCheckedIn = false;
@@ -1672,18 +1671,22 @@ export async function getCheckinPageData(
   }
 
   // 格式化活动时间展示
-  const dateStr = startAt.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Shanghai' });
-  const timeStr = `${startAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai' })} - ${endAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai' })}`;
+  const dateStr = startAt
+    ? startAt.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Shanghai' })
+    : '时间待定';
+  const timeStr = startAt && endAt
+    ? `${startAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai' })} - ${endAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai' })}`
+    : '时间待定';
 
   return {
     activityId,
     activityName: activity.name as string,
     activityDate: dateStr,
     activityTime: timeStr,
-    activityLocation: activity.place as string,
+    activityLocation: (activity.place as string) || '地点待定',
     windowStatus,
-    windowOpenAt: (activity.checkin_force_open as boolean) ? null : windowOpenAt.toISOString(),
-    windowCloseAt: (activity.checkin_force_closed as boolean) ? null : windowCloseAt.toISOString(),
+    windowOpenAt: (activity.checkin_force_open as boolean) || !windowOpenAt ? null : windowOpenAt.toISOString(),
+    windowCloseAt: (activity.checkin_force_closed as boolean) || !windowCloseAt ? null : windowCloseAt.toISOString(),
     checkinCount: (activity.checkin_count as number) ?? 0,
     alreadyCheckedIn,
     checkinQrId: qrCodeId,
@@ -1695,133 +1698,71 @@ export async function getCheckinPageData(
  * 校验窗口 → 防重复 → 写入记录 → 计数器 +1。
  */
 // ============================================================================
-// 线索自动同步：内部工具函数
+// 线索生成：仅由测评和用户明确咨询触发
 // ============================================================================
 
 /**
- * 线索触发事件类型，决定加分维度和 tag。
- * - qa_high_risk      : AI 问答高风险
- * - qa_normal         : AI 问答（非高风险，仍值得记录）
- * - assessment_high   : 财税测评高风险
- * - assessment_medium : 财税测评中风险
- * - assessment_low    : 财税测评低风险
- * - survey_submit     : 沙龙投票提交
- * - checkin           : 沙龙签到
+ * 测评是唯一的自动分级依据：高风险为高优先级， 中风险为普通培育；
+ * 低风险仅保留测评报告，不进入线索池。扫码、领取资料、问答、签到和投票均只记录行为。
  */
-type LeadEventType =
-  | 'qa_high_risk'
-  | 'qa_normal'
-  | 'assessment_high'
-  | 'assessment_medium'
-  | 'assessment_low'
-  | 'survey_submit'
-  | 'checkin';
-
-const LEAD_EVENT_SCORE: Record<LeadEventType, number> = {
-  qa_high_risk: 40,
-  qa_normal: 10,
-  assessment_high: 60,
-  assessment_medium: 30,
-  assessment_low: 10,
-  survey_submit: 20,
-  checkin: 15,
-};
-
-const LEAD_EVENT_TAG: Record<LeadEventType, string> = {
-  qa_high_risk: 'AI高风险问答',
-  qa_normal: 'AI问答',
-  assessment_high: '高风险测评',
-  assessment_medium: '中风险测评',
-  assessment_low: '低风险测评',
-  survey_submit: '沙龙投票',
-  checkin: '沙龙签到',
-};
-
-/**
- * 根据总分计算意向等级（与后台 scoreToLeadLevel 逻辑保持一致）。
- */
-function calcLeadLevel(score: number): 'strong' | 'high' | 'potential' | 'normal' {
-  if (score >= 100) return 'strong';
-  if (score >= 70) return 'high';
-  if (score >= 40) return 'potential';
-  return 'normal';
-}
-
-/**
- * upsertLeadFromEvent — 落地页各行为触发点的线索自动同步入口。
- *
- * 策略：
- *   1. 优先从线索表取该用户最新一条非终态线索
- *   2. 存在 → 追加分值 + tag，不降级等级，不改变终态
- *   3. 不存在 → 创建新线索（status=new）
- *   4. 同步更新 users.lead_status
- *   5. 全程 fire-and-forget，抛错只 console.error，不影响主流程
- */
-async function upsertLeadFromEvent(params: {
+async function upsertLeadFromAssessment(params: {
   userId: string;
-  eventType: LeadEventType;
   activityId?: string | null;
   qrCodeId?: string | null;
-  riskLevel?: RiskLevel | null;
+  riskLevel: RiskLevel;
 }): Promise<void> {
-  try {
-    const client = createServiceClient();
-    const addScore = LEAD_EVENT_SCORE[params.eventType];
-    const tag = LEAD_EVENT_TAG[params.eventType];
+  if (params.riskLevel === 'low') return;
 
-    const { data: existing } = await client
+  const client = createServiceClient();
+  const isHighRisk = params.riskLevel === 'high';
+  const score = isHighRisk ? 100 : 50;
+  const level = isHighRisk ? 'strong' : 'potential';
+  const tag = isHighRisk ? '测评高风险' : '测评中风险';
+  const { data: existing, error: existingError } = await client
+    .from('leads')
+    .select('id, score, level, tags')
+    .eq('user_id', params.userId)
+    .not('status', 'in', '("converted","invalid")')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existingError) throw new Error(existingError.message);
+
+  if (existing) {
+    const previousScore = (existing.score as number) ?? 0;
+    const previousTags = (existing.tags as string[]) ?? [];
+    const nextTags = previousTags.includes(tag) ? previousTags : [...previousTags, tag];
+    const { error } = await client
       .from('leads')
-      .select('id, score, level, tags, status')
-      .eq('user_id', params.userId)
-      .not('status', 'in', '("converted","invalid")')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (existing) {
-      const prevScore = (existing.score as number) ?? 0;
-      const nextScore = prevScore + addScore;
-      const prevTags = (existing.tags as string[]) ?? [];
-      const nextTags = prevTags.includes(tag) ? prevTags : [...prevTags, tag];
-      const nextLevel = calcLeadLevel(nextScore);
-
-      await client
-        .from('leads')
-        .update({
-          score: nextScore,
-          level: nextLevel,
-          tags: nextTags,
-          ...(params.riskLevel ? { risk_level: params.riskLevel } : {}),
-        })
-        .eq('id', existing.id as string);
-    } else {
-      const score = addScore;
-      const level = calcLeadLevel(score);
-      const { data: newLead } = await client
-        .from('leads')
-        .insert({
-          user_id: params.userId,
-          activity_id: params.activityId ?? null,
-          qr_code_id: params.qrCodeId ?? null,
-          tags: [tag],
-          score,
-          level,
-          risk_level: params.riskLevel ?? null,
-          status: 'new',
-        })
-        .select('id')
-        .single();
-
-      if (newLead) {
-        await client
-          .from('users')
-          .update({ lead_status: 'new' })
-          .eq('id', params.userId);
-      }
-    }
-  } catch (err) {
-    console.error('[upsertLeadFromEvent] failed silently', params.eventType, err);
+      .update({
+        score: Math.max(previousScore, score),
+        level: existing.level === 'strong' || isHighRisk ? 'strong' : 'potential',
+        tags: nextTags,
+        risk_level: params.riskLevel,
+      })
+      .eq('id', existing.id as string);
+    if (error) throw new Error(error.message);
+    return;
   }
+
+  const { data: newLead, error: insertError } = await client
+    .from('leads')
+    .insert({
+      user_id: params.userId,
+      activity_id: params.activityId ?? null,
+      qr_code_id: params.qrCodeId ?? null,
+      tags: [tag],
+      score,
+      level,
+      risk_level: params.riskLevel,
+      status: 'new',
+    })
+    .select('id')
+    .single();
+  if (insertError || !newLead) throw new Error(insertError?.message ?? '创建测评线索失败');
+
+  if (params.qrCodeId) await incrementQrCounter(client, params.qrCodeId, 'leads');
+  await client.from('users').update({ lead_status: 'new' }).eq('id', params.userId);
 }
 
 export async function submitCheckin(
@@ -1874,14 +1815,6 @@ export async function submitCheckin(
     .select('name, checkin_count')
     .eq('id', activityId)
     .single();
-
-  // 自动同步线索（签到 = 意向信号，fire-and-forget）
-  void upsertLeadFromEvent({
-    userId: params.userId,
-    eventType: 'checkin',
-    activityId,
-    qrCodeId: params.checkinQrId,
-  });
 
   return {
     checkinId: newCheckin.id as string,

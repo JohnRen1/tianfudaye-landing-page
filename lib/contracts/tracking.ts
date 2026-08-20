@@ -23,6 +23,9 @@
 
 import type { MaterialClaimStatus } from './material';
 
+/** 与管理后台 ActivityType 保持同步；落地页仅消费活动展示所需的枚举值。 */
+export type LandingActivityType = 'offline' | 'online' | 'hybrid' | 'masterclass';
+
 // ===========================================================================
 // URL 参数协议（S2 核心定义）
 // ===========================================================================
@@ -172,6 +175,8 @@ export interface QrScanTrackResponseDTO {
 export interface TrackingActivityDTO {
   id: string;
   name: string;
+  /** 活动形式，用于渲染活动封面标签。null 为历史记录未设置形式。 */
+  type: LandingActivityType | null;
   /**
    * 活动日期，ISO 8601 日期字符串（YYYY-MM-DD）。
    * 落地页格式化为"2026年6月15日"展示。

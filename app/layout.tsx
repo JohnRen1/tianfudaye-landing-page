@@ -8,7 +8,7 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: '智税财税 - AI财税体检与私域转化平台',
+  title: '天赋大业',
   description: '专业财税风险评估、AI税务助手、企业合规体检，助力企业税务健康',
   generator: 'v0.app',
   icons: {

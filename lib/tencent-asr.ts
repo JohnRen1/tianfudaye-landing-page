@@ -68,6 +68,11 @@ function getTencentAsrCredentials(): { secretId: string; secretKey: string } {
   return { secretId, secretKey };
 }
 
+function getFilterModal(): 0 | 1 | 2 {
+  const value = Number.parseInt(process.env.TENCENT_ASR_FILTER_MODAL?.trim() || '2', 10);
+  return value === 0 || value === 1 || value === 2 ? value : 2;
+}
+
 export async function recognizeTencentSpeech(params: {
   audio: Buffer;
   voiceFormat: string;
@@ -83,7 +88,7 @@ export async function recognizeTencentSpeech(params: {
     Data: params.audio.toString('base64'),
     DataLen: params.audio.byteLength,
     FilterDirty: 0,
-    FilterModal: 1,
+    FilterModal: getFilterModal(),
     FilterPunc: 0,
     ConvertNumMode: 1,
     ...(process.env.TENCENT_ASR_HOTWORD_LIST?.trim()

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const userUpdates: Array<Record<string, unknown>> = [];
+const leadUpdates: Array<Record<string, unknown>> = [];
 
 function buildChain(table: string) {
   let operation: 'insert' | 'select' | 'update' | null = null;
@@ -12,6 +13,7 @@ function buildChain(table: string) {
     update: vi.fn((payload: Record<string, unknown>) => {
       operation = 'update';
       if (table === 'users') userUpdates.push(payload);
+      if (table === 'leads') leadUpdates.push(payload);
       return chain;
     }),
     select: vi.fn(() => {
@@ -47,6 +49,7 @@ vi.mock('@/lib/supabase', () => ({
 describe('留言咨询数据库写入', () => {
   beforeEach(() => {
     userUpdates.length = 0;
+    leadUpdates.length = 0;
   });
 
   it('不使用留言占位信息覆盖用户资料', async () => {
@@ -72,5 +75,6 @@ describe('留言咨询数据库写入', () => {
     expect(userUpdates[0]).not.toHaveProperty('name');
     expect(userUpdates[0]).not.toHaveProperty('company');
     expect(userUpdates[0]).not.toHaveProperty('industry');
+    expect(leadUpdates).toContainEqual({ status: 'pending', tags: ['紧急-客服咨询'] });
   });
 });

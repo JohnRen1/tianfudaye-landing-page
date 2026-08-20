@@ -60,6 +60,7 @@ function SupportPageContent() {
   const isMessagePhoneValid = messagePhone === "" || /^1[3-9]\d{9}$/.test(messagePhone);
   const urlQrId = searchParams.get("qr") ?? searchParams.get("qr_id");
   const urlActivityId = searchParams.get("activity") ?? searchParams.get("activity_id");
+  const sourceQaRecordId = searchParams.get("qaRecordId") ?? undefined;
   const returnTo = searchParams.get("returnTo");
   const backPath = isSafeReturnPath(returnTo) ? returnTo : buildPathWithTracking("/", searchParams);
   const currentPath = `/support${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
@@ -102,6 +103,7 @@ function SupportPageContent() {
         appointmentType: "message",
         ...(urlQrId && { sourceQrId: urlQrId }),
         ...(urlActivityId && { sourceActivityId: urlActivityId }),
+        ...(sourceQaRecordId && { sourceQaRecordId }),
       });
       setSubmitted(true);
     } catch (err) {

@@ -172,6 +172,11 @@ export interface AppointmentCreateDTO {
    * 审计修复 #11：明确传递来源，使预约与线索状态联动有迹可循。
    */
   sourceLeadId?: string;
+  /**
+   * 来源 AI 问答记录 id。仅由问答页跳转携带，服务端校验它属于当前用户后写入预约记录。
+   * 用于后台准确统计该问答是否成功转为客服咨询或顾问预约。
+   */
+  sourceQaRecordId?: string;
 }
 
 /**

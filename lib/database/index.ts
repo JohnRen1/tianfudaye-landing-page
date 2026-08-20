@@ -5,7 +5,10 @@ import * as supabase from './supabase-adapter';
 export type DatabaseProvider = 'supabase' | 'cloudbase';
 
 function normalizeProvider(value: string | undefined): DatabaseProvider {
-  return value === 'cloudbase' ? 'cloudbase' : 'supabase';
+  if (value === 'cloudbase') {
+    throw new Error('落地页二维码追踪目前仅支持 APP_DATABASE_PROVIDER=supabase');
+  }
+  return 'supabase';
 }
 
 export const databaseProvider: DatabaseProvider = normalizeProvider(

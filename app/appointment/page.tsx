@@ -68,6 +68,7 @@ function AppointmentForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sourceLeadId = searchParams.get("leadId") ?? undefined;
+  const sourceQaRecordId = searchParams.get("qaRecordId") ?? undefined;
   const activityName = searchParams.get("activity_name") ?? undefined;
   const prefillTopic = searchParams.get("topic") ?? "";
   const prefillDescription = searchParams.get("description") ?? "";
@@ -159,6 +160,7 @@ function AppointmentForm() {
         appointmentType: isEnrollMode ? "enroll" : "consult",
         ...(form.wechat.trim() && { wechat: form.wechat.trim() }),
         ...(sourceLeadId && { sourceLeadId }),
+        ...(sourceQaRecordId && { sourceQaRecordId }),
         ...(sourceQrId && { sourceQrId }),
         ...(sourceActivityId && { sourceActivityId }),
       });

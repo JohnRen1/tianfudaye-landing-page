@@ -10,6 +10,7 @@ describe('腾讯云语音识别鉴权', () => {
       const headers = new Headers(init?.headers);
       expect(headers.get('Authorization')).toMatch(/^TC3-HMAC-SHA256 Credential=/);
       expect(headers.get('Authorization')).not.toMatch(/^TC3-HMAC-SHA256,/);
+      expect(JSON.parse(String(init?.body))).toMatchObject({ FilterModal: 2 });
       return new Response(JSON.stringify({ Response: { Result: '测试', RequestId: 'request-1' } }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
