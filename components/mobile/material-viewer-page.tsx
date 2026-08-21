@@ -29,7 +29,8 @@ function PdfCanvasPreview({ materialId, name }: { materialId: string; name: stri
           disableWorker: true,
         };
         const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist/legacy/build/pdf');
-        GlobalWorkerOptions.workerSrc = '/api/pdf-worker';
+        // 静态资源会随 public 目录部署，避免移动 WebView 加载动态 worker chunk 或运行时路由失败。
+        GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
         const loadingTask = getDocument(source);
         const documentProxy = await loadingTask.promise;
         if (cancelled) return;
