@@ -36,7 +36,7 @@ function PdfCanvasPreview({ materialId, name }: { materialId: string; name: stri
         if (cancelled) return;
 
         container.replaceChildren();
-        const renderWidth = Math.max(320, container.clientWidth - 24);
+        const renderWidth = Math.max(320, container.clientWidth);
         // 微信和多数手机使用高分屏；以设备像素比绘制，避免 CSS 放大低分辨率画布导致发虚。
         const outputScale = Math.min(window.devicePixelRatio || 1, 2);
         for (let pageNumber = 1; pageNumber <= documentProxy.numPages; pageNumber += 1) {
@@ -50,7 +50,7 @@ function PdfCanvasPreview({ materialId, name }: { materialId: string; name: stri
           canvas.height = Math.ceil(viewport.height * outputScale);
           canvas.style.width = `${Math.ceil(viewport.width)}px`;
           canvas.style.height = `${Math.ceil(viewport.height)}px`;
-          canvas.className = 'mb-3 w-full rounded-sm bg-white shadow-sm last:mb-0';
+          canvas.className = 'block w-full bg-white';
           container.appendChild(canvas);
           await page.render({
             canvasContext: context,
@@ -73,7 +73,7 @@ function PdfCanvasPreview({ materialId, name }: { materialId: string; name: stri
   }, [materialId]);
 
   return (
-    <main className="min-h-[calc(100vh-65px)] bg-muted/50 px-3 py-3">
+    <main className="min-h-[calc(100vh-65px)] bg-white">
       {loading && (
         <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
           <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
@@ -88,7 +88,11 @@ function PdfCanvasPreview({ materialId, name }: { materialId: string; name: stri
           </CardContent>
         </Card>
       )}
-      <div ref={containerRef} aria-label={`${name} PDF 内容`} className={loading || errorMessage ? 'hidden' : ''} />
+      <div
+        ref={containerRef}
+        aria-label={`${name} PDF 内容`}
+        className={errorMessage ? 'hidden' : 'w-full'}
+      />
     </main>
   );
 }
@@ -97,6 +101,7 @@ export function MaterialViewerPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const materialId = searchParams.get('materialId');
+  const origin = searchParams.get('origin');
   const [data, setData] = useState<MaterialViewResponseDTO | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -124,6 +129,10 @@ export function MaterialViewerPage() {
       active = false;
     };
   }, [materialId]);
+
+  useEffect(() => {
+    document.title = origin === 'activity' ? '天赋领航活动宝' : '天赋大业';
+  }, [origin]);
 
   if (loading) {
     return (

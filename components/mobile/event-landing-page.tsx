@@ -175,7 +175,8 @@ export function EventLandingPage({
   };
 
   const handleMaterialView = (materialId: string) => {
-    router.push(`/materials/view?materialId=${encodeURIComponent(materialId)}`);
+    const origin = showActivitySections ? 'activity' : 'site';
+    router.push(`/materials/view?materialId=${encodeURIComponent(materialId)}&origin=${origin}`);
   };
 
   const handleLoginSuccess = () => {

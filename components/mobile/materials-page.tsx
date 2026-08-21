@@ -149,7 +149,8 @@ export function MaterialsPage() {
   };
 
   const handleView = (materialId: string) => {
-    router.push(`/materials/view?materialId=${encodeURIComponent(materialId)}`);
+    const origin = activityId ? 'activity' : 'site';
+    router.push(`/materials/view?materialId=${encodeURIComponent(materialId)}&origin=${origin}`);
   };
 
   const handleLoginSuccess = () => {
