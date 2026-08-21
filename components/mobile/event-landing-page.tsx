@@ -61,6 +61,10 @@ interface EventLandingPageProps {
   showActivitySections?: boolean;
 }
 
+function getMaterialViewPath(materialId: string): string {
+  return `/api/materials/${encodeURIComponent(materialId)}/view`;
+}
+
 export function EventLandingPage({
   eventData = null,
   isLoggedIn: initialLoggedIn = false,
@@ -350,6 +354,7 @@ export function EventLandingPage({
                           </div>
                         </div>
                         <Button
+                          asChild={isDownloaded}
                           size="sm"
                           variant={isDownloaded ? "outline" : "default"}
                           className={cn(
@@ -358,14 +363,14 @@ export function EventLandingPage({
                             !isDownloaded && !needsCompanyInfo &&
                               "bg-accent text-accent-foreground hover:bg-accent/90"
                           )}
-                          onClick={() => void handleMaterialClick(material)}
                           disabled={isClaiming}
+                          {...(isDownloaded ? {} : { onClick: () => void handleMaterialClick(material) })}
                         >
                           {isDownloaded ? (
-                            <>
+                            <a href={getMaterialViewPath(material.id)}>
                               <CheckCircle className="mr-1 h-3 w-3" />
-                              已领取
-                            </>
+                              查看资料
+                            </a>
                           ) : needsCompanyInfo ? (
                             <>
                               <LockKeyhole className="mr-1 h-3 w-3" />

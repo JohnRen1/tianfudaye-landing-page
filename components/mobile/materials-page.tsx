@@ -65,6 +65,10 @@ function isSafeInternalPath(value: string | null): value is string {
   return Boolean(value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\"));
 }
 
+function getMaterialViewPath(materialId: string): string {
+  return `/api/materials/${encodeURIComponent(materialId)}/view`;
+}
+
 export function MaterialsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -115,7 +119,6 @@ export function MaterialsPage() {
   };
 
   const handleClaim = async (material: MaterialLandingItemDTO) => {
-    if (material.claimStatus === "claimed") return;
     if (material.claimStatus === "needs_login" || !isClientLoggedIn()) {
       setPendingMaterial(material);
       setShowLoginModal(true);
@@ -330,6 +333,7 @@ export function MaterialsPage() {
                       </div>
 
                       <Button
+                        asChild={isClaimed}
                         className={cn(
                           "h-10 w-full rounded-xl",
                           isClaimed && "border-success/20 bg-success/10 text-success hover:bg-success/10",
@@ -338,13 +342,21 @@ export function MaterialsPage() {
                             "bg-accent text-accent-foreground hover:bg-accent/90"
                         )}
                         variant={isClaimed ? "outline" : "default"}
-                        disabled={isClaimed || isClaiming}
-                        onClick={() => void handleClaim(material)}
+                        disabled={isClaiming}
+                        {...(isClaimed ? {} : { onClick: () => void handleClaim(material) })}
                       >
-                        {isClaimed && <CheckCircle className="mr-2 h-4 w-4" />}
-                        {!isClaimed && !needsInfo && !isNeedsLogin && <Download className="mr-2 h-4 w-4" />}
-                        {(needsInfo || isNeedsLogin) && <LockKeyhole className="mr-2 h-4 w-4" />}
-                        {isClaiming ? "领取中..." : getActionCopy(material.claimStatus)}
+                        {isClaimed ? (
+                          <a href={getMaterialViewPath(material.id)}>
+                            <CheckCircle className="mr-2 h-4 w-4" />
+                            查看资料
+                          </a>
+                        ) : (
+                          <>
+                            {!needsInfo && !isNeedsLogin && <Download className="mr-2 h-4 w-4" />}
+                            {(needsInfo || isNeedsLogin) && <LockKeyhole className="mr-2 h-4 w-4" />}
+                            {isClaiming ? "领取中..." : getActionCopy(material.claimStatus)}
+                          </>
+                        )}
                       </Button>
                     </CardContent>
                   </Card>

@@ -155,6 +155,9 @@ export const createExpertReview: typeof SupabaseAdapter.createExpertReview = asy
 export const claimMaterial: typeof SupabaseAdapter.claimMaterial = async () =>
   notImplemented('claimMaterial');
 
+export const getClaimedMaterialViewUrl: typeof SupabaseAdapter.getClaimedMaterialViewUrl = async () =>
+  notImplemented('getClaimedMaterialViewUrl');
+
 export const listLandingMaterials: typeof SupabaseAdapter.listLandingMaterials = async () =>
   notImplemented('listLandingMaterials');
 

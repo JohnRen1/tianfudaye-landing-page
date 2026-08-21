@@ -1035,6 +1035,51 @@ export async function claimMaterial(params: {
   };
 }
 
+/**
+ * 为已领取资料生成一次新的查看链接。
+ *
+ * 该方法只用于用户主动点击“查看资料”的服务端跳转链路，不写入领取记录，
+ * 使所有浏览器都能以普通链接导航，不依赖客户端异步 window.open。
+ */
+export async function getClaimedMaterialViewUrl(params: {
+  userId: string;
+  materialId: string;
+}): Promise<string> {
+  const serviceClient = createServiceClient();
+  const { data: claim, error: claimError } = await serviceClient
+    .from('material_claims')
+    .select('id')
+    .eq('user_id', params.userId)
+    .eq('material_id', params.materialId)
+    .maybeSingle();
+
+  if (claimError) throw new Error(claimError.message);
+  if (!claim) throw new Error('MATERIAL_NOT_CLAIMED');
+
+  const { data: material, error: materialError } = await serviceClient
+    .from('materials')
+    .select('status, storage_key')
+    .eq('id', params.materialId)
+    .single();
+
+  if (materialError || !material || material.status !== 'published') {
+    throw new Error('MATERIAL_NOT_FOUND');
+  }
+
+  const storageKey = material.storage_key as string | null;
+  if (!storageKey) throw new Error('MATERIAL_NOT_FOUND');
+
+  const { data: signed, error: signError } = await serviceClient
+    .storage
+    .from('materials')
+    .createSignedUrl(storageKey.replace(/^materials\//, ''), 3600);
+
+  if (signError || !signed?.signedUrl) {
+    throw new Error(`生成查看链接失败：${signError?.message ?? '未知错误'}`);
+  }
+  return signed.signedUrl;
+}
+
 export async function listLandingMaterials(params: {
   query: MaterialLandingQueryDTO;
   userId?: string | null;
