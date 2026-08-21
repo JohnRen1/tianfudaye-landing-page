@@ -2,7 +2,8 @@ packages:
   - "."
 
 allowBuilds:
-  canvas: set this to true or false
+  # PDF.js 在浏览器端渲染不需要 Node canvas；显式禁用以避免 pnpm dev 被可选原生依赖阻塞。
+  canvas: false
 
 onlyBuiltDependencies:
   - sharp
