@@ -41,6 +41,9 @@ export const loginOrCreateUserByPhone = adapter.loginOrCreateUserByPhone;
 export const buildPhoneLoginResponse = adapter.buildPhoneLoginResponse;
 export const updateUserProfile = adapter.updateUserProfile;
 export const getUserByWechatOpenId = adapter.getUserByWechatOpenId;
+// 微信小程序入口只支持 Supabase（normalizeProvider 已拒绝 cloudbase），
+// 因此显式使用该适配器，避免把小程序身份能力错误暴露给未实现的提供方。
+export const bindWechatOpenIdToUser = supabase.bindWechatOpenIdToUser;
 export const buildWechatLoginResponse = adapter.buildWechatLoginResponse;
 export const getCheckinPageData = adapter.getCheckinPageData;
 export const submitCheckin = adapter.submitCheckin;

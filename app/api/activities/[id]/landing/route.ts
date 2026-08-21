@@ -25,5 +25,8 @@ export async function GET(
   if (!response) {
     return fail(TRACKING_ERROR_CODES.TRACK_ACTIVITY_NOT_FOUND, '活动不存在或已下架', 404);
   }
-  return ok(response);
+  const apiResponse = ok(response);
+  apiResponse.headers.set('Cache-Control', 'private, no-store, max-age=0');
+  apiResponse.headers.set('Vary', 'Authorization, Cookie');
+  return apiResponse;
 }

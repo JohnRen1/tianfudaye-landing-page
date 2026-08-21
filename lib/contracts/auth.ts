@@ -75,6 +75,8 @@ export interface PhoneLoginRequestDTO {
    */
   sourceQrId?: string;
   sourceActivityId?: string;
+  /** 微信小程序 wx.login 返回的临时 code；仅小程序端传入，用于绑定 openid。 */
+  miniProgramCode?: string;
 }
 
 /**

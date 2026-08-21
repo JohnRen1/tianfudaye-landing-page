@@ -99,6 +99,23 @@ export async function exchangeWechatCodeForAccessToken(code: string): Promise<{
   return { openid, accessToken };
 }
 
+/** 将微信小程序 wx.login 的临时 code 换为 openid；密钥仅在服务端读取。 */
+export async function exchangeMiniProgramCodeForOpenId(code: string): Promise<string> {
+  const appId = getRequiredEnv('WECHAT_MINIPROGRAM_APP_ID');
+  const secret = getRequiredEnv('WECHAT_MINIPROGRAM_APP_SECRET');
+  const url = new URL('https://api.weixin.qq.com/sns/jscode2session');
+  url.searchParams.set('appid', appId);
+  url.searchParams.set('secret', secret);
+  url.searchParams.set('js_code', code);
+  url.searchParams.set('grant_type', 'authorization_code');
+  const response = await fetch(url.toString(), { method: 'GET', cache: 'no-store' });
+  const body = (await response.json()) as Record<string, unknown>;
+  if (!response.ok || typeof body.errcode === 'number' || typeof body.openid !== 'string') {
+    throw new Error(`WECHAT_MINIPROGRAM_CODE_EXCHANGE_FAILED:${String(body.errmsg ?? response.statusText)}`);
+  }
+  return body.openid;
+}
+
 export async function fetchWechatUserInfo(params: {
   accessToken: string;
   openid: string;

@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { buildPathWithTracking } from "@/lib/tracking-context";
 import { LoginModal } from "./login-modal";
 import { hydrateClientAuthFromServer } from "@/lib/client-auth";
-import { claimMaterial, getMaterialViewUrl } from "@/lib/api/materials";
+import { claimMaterial } from "@/lib/api/materials";
 import type { MaterialClaimStatus } from "@/lib/contracts/material";
 import type { LandingActivityType } from "@/lib/contracts/tracking";
 import { ACTIVITY_LANDING_DEFAULTS, displayActivityField, getActivityCoverPresentation } from "@/lib/activity-presentation";
@@ -178,18 +178,6 @@ export function EventLandingPage({
     router.push(`/materials/view?materialId=${encodeURIComponent(materialId)}`);
   };
 
-  const handleMaterialDownload = async (materialId: string) => {
-    setClaimingMaterialId(materialId);
-    try {
-      const { viewUrl } = await getMaterialViewUrl(materialId);
-      window.location.assign(viewUrl);
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : "资料下载失败");
-    } finally {
-      setClaimingMaterialId(null);
-    }
-  };
-
   const handleLoginSuccess = () => {
     isLoggedInRef.current = true;
     setIsLoggedIn(true);
@@ -332,7 +320,6 @@ export function EventLandingPage({
                     </div>
                   ) : materials.map((material) => {
                     const isDownloaded = downloadedMaterials.includes(material.id) || material.claimStatus === "claimed";
-                    const canPreviewInPage = material.format.toLowerCase() === "pdf";
                     const needsCompanyInfo = material.claimStatus === "needs_company_info";
                     const Icon = material.format === "Excel" ? ClipboardCheck : FileText;
                     const isClaiming = claimingMaterialId === material.id;
@@ -379,11 +366,7 @@ export function EventLandingPage({
                             disabled={isClaiming}
                             onClick={() => {
                               if (isDownloaded) {
-                                if (canPreviewInPage) {
-                                  handleMaterialView(material.id);
-                                  return;
-                                }
-                                void handleMaterialDownload(material.id);
+                                handleMaterialView(material.id);
                                 return;
                               }
                               void handleMaterialClick(material);
@@ -406,11 +389,6 @@ export function EventLandingPage({
                               </>
                             )}
                           </Button>
-                          {isDownloaded && !canPreviewInPage && (
-                            <p className="mt-1 max-w-[120px] text-right text-[10px] leading-4 text-muted-foreground">
-                              点击后下载，使用 WPS/Office 查看
-                            </p>
-                          )}
                         </div>
                       </div>
                     );

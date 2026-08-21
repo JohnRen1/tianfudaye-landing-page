@@ -1635,6 +1635,23 @@ export async function getUserByWechatOpenId(openid: string): Promise<CurrentUser
   return mapCurrentUser(row as Record<string, unknown>);
 }
 
+/** 将已通过手机号验证的账号绑定到微信小程序 openid，避免创建重复用户。 */
+export async function bindWechatOpenIdToUser(userId: string, openid: string): Promise<void> {
+  const serviceClient = createServiceClient();
+  const { data: owner, error: ownerError } = await serviceClient
+    .from('users')
+    .select('id')
+    .eq('openid', openid)
+    .maybeSingle();
+  if (ownerError) throw new Error(ownerError.message);
+  if (owner && owner.id !== userId) throw new Error('WECHAT_OPENID_ALREADY_BOUND');
+  const { error } = await serviceClient
+    .from('users')
+    .update({ openid, active_at: new Date().toISOString() })
+    .eq('id', userId);
+  if (error) throw new Error(error.message);
+}
+
 export function buildWechatLoginResponse(params: {
   user: CurrentUserDTO;
   isNew: boolean;

@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server';
-import { buildPhoneLoginResponse, loginOrCreateUserByPhone, verifyAndConsumeDevCode } from '@/lib/db';
+import { bindWechatOpenIdToUser, buildPhoneLoginResponse, loginOrCreateUserByPhone, verifyAndConsumeDevCode } from '@/lib/db';
 import { ok, fail } from '@/lib/api-response';
 import { buildUserAuthToken, setUserAuthCookie } from '@/lib/auth-token';
 import type { PhoneLoginResponseDTO } from '@/lib/contracts/auth';
+import { exchangeMiniProgramCodeForOpenId } from '@/lib/wechat';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +18,7 @@ export async function POST(req: NextRequest) {
     return fail('INVALID_REQUEST_BODY', '请求体格式错误', 400);
   }
 
-  const { phone, code, sourceQrId, sourceActivityId } = body as Record<string, unknown>;
+  const { phone, code, sourceQrId, sourceActivityId, miniProgramCode } = body as Record<string, unknown>;
 
   if (typeof phone !== 'string' || !PHONE_REGEX.test(phone)) {
     return fail('INVALID_PHONE', '手机号格式不正确', 400);
@@ -33,11 +34,17 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const miniProgramOpenId = typeof miniProgramCode === 'string' && miniProgramCode.length > 0
+      ? await exchangeMiniProgramCodeForOpenId(miniProgramCode)
+      : undefined;
     const result = await loginOrCreateUserByPhone({
       phone,
       sourceQrId: typeof sourceQrId === 'string' ? sourceQrId : undefined,
       sourceActivityId: typeof sourceActivityId === 'string' ? sourceActivityId : undefined,
     });
+    if (miniProgramOpenId) {
+      await bindWechatOpenIdToUser(result.user.id, miniProgramOpenId);
+    }
     const accessToken = buildUserAuthToken(result.user.id);
     const response: PhoneLoginResponseDTO = buildPhoneLoginResponse({
       user: result.user,

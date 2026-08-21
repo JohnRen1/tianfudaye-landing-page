@@ -75,6 +75,8 @@ export async function apiGet<T>(
   const res = await fetch(url, {
     method: 'GET',
     headers: buildHeaders(),
+    // 资料领取状态等端用户数据必须始终从服务端重新计算，不能复用 WebView 缓存。
+    cache: 'no-store',
   });
   return handleResponse<T>(res);
 }
