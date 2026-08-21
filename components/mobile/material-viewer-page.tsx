@@ -28,7 +28,8 @@ function PdfCanvasPreview({ materialId, name }: { materialId: string; name: stri
           httpHeaders: token ? { Authorization: `Bearer ${token}` } : undefined,
           disableWorker: true,
         };
-        const { getDocument } = await import('pdfjs-dist/legacy/build/pdf');
+        const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist/legacy/build/pdf');
+        GlobalWorkerOptions.workerSrc = '/api/pdf-worker';
         const loadingTask = getDocument(source);
         const documentProxy = await loadingTask.promise;
         if (cancelled) return;
