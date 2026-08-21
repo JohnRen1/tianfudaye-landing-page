@@ -37,6 +37,8 @@ function PdfCanvasPreview({ materialId, name }: { materialId: string; name: stri
 
         container.replaceChildren();
         const renderWidth = Math.max(320, container.clientWidth - 24);
+        // 微信和多数手机使用高分屏；以设备像素比绘制，避免 CSS 放大低分辨率画布导致发虚。
+        const outputScale = Math.min(window.devicePixelRatio || 1, 2);
         for (let pageNumber = 1; pageNumber <= documentProxy.numPages; pageNumber += 1) {
           const page = await documentProxy.getPage(pageNumber);
           const baseViewport = page.getViewport({ scale: 1 });
@@ -44,11 +46,17 @@ function PdfCanvasPreview({ materialId, name }: { materialId: string; name: stri
           const canvas = document.createElement('canvas');
           const context = canvas.getContext('2d');
           if (!context) throw new Error('当前设备无法创建 PDF 预览画布');
-          canvas.width = Math.ceil(viewport.width);
-          canvas.height = Math.ceil(viewport.height);
+          canvas.width = Math.ceil(viewport.width * outputScale);
+          canvas.height = Math.ceil(viewport.height * outputScale);
+          canvas.style.width = `${Math.ceil(viewport.width)}px`;
+          canvas.style.height = `${Math.ceil(viewport.height)}px`;
           canvas.className = 'mb-3 w-full rounded-sm bg-white shadow-sm last:mb-0';
           container.appendChild(canvas);
-          await page.render({ canvasContext: context, viewport }).promise;
+          await page.render({
+            canvasContext: context,
+            viewport,
+            transform: outputScale === 1 ? undefined : [outputScale, 0, 0, outputScale, 0, 0],
+          }).promise;
           if (cancelled) return;
         }
       } catch (error) {
