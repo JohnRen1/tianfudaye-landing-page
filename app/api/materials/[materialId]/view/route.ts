@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getClaimedMaterialViewUrl } from '@/lib/db';
-import { fail } from '@/lib/api-response';
+import { fail, ok } from '@/lib/api-response';
 import { requireUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -11,7 +11,7 @@ interface RouteContext {
 
 /**
  * 已领取资料的查看入口。
- * 保持为普通链接跳转，以兼容微信及系统浏览器对客户端弹窗的限制。
+ * 客户端取得地址后在当前页面导航，以兼容微信及系统浏览器对客户端弹窗的限制。
  */
 export async function GET(req: NextRequest, { params }: RouteContext) {
   const ctx = await requireUser(req);
@@ -21,13 +21,11 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
   if (!materialId) return fail('INVALID_MATERIAL_ID', '资料编号不能为空', 400);
 
   try {
-    const viewUrl = await getClaimedMaterialViewUrl({
+    const viewData = await getClaimedMaterialViewUrl({
       userId: ctx.userId,
       materialId,
     });
-    const response = NextResponse.redirect(viewUrl, 302);
-    response.headers.set('Cache-Control', 'no-store, max-age=0');
-    return response;
+    return ok(viewData);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message === 'MATERIAL_NOT_CLAIMED') {

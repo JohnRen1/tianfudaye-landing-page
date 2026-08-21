@@ -37,16 +37,26 @@ describe('GET /api/materials/[materialId]/view', () => {
     expect(getClaimedMaterialViewUrl).not.toHaveBeenCalled();
   });
 
-  it('已领取时通过服务端重定向到新签名链接', async () => {
+  it('已领取时返回新的签名查看链接', async () => {
     vi.mocked(requireUser).mockResolvedValue(userContext);
-    vi.mocked(getClaimedMaterialViewUrl).mockResolvedValue('https://storage.example.com/material.pdf?token=fresh');
+    vi.mocked(getClaimedMaterialViewUrl).mockResolvedValue({
+      viewUrl: 'https://storage.example.com/material.pdf?token=fresh',
+      name: '财税指南',
+      format: 'pdf',
+    });
     const { GET } = await import('@/app/api/materials/[materialId]/view/route');
 
     const response = await GET(makeRequest(), makeContext());
 
-    expect(response.status).toBe(302);
-    expect(response.headers.get('location')).toBe('https://storage.example.com/material.pdf?token=fresh');
-    expect(response.headers.get('cache-control')).toBe('no-store, max-age=0');
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      success: true,
+      data: {
+        viewUrl: 'https://storage.example.com/material.pdf?token=fresh',
+        name: '财税指南',
+        format: 'pdf',
+      },
+    });
     expect(getClaimedMaterialViewUrl).toHaveBeenCalledWith({ userId: 'user-1', materialId: 'material-1' });
   });
 

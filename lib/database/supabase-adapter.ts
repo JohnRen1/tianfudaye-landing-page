@@ -34,6 +34,7 @@ import type {
   MaterialClaimCreateResponseDTO,
   MaterialLandingItemDTO,
   MaterialLandingQueryDTO,
+  MaterialViewResponseDTO,
 } from '../contracts/material';
 import type {
   ActivityLandingDetailDTO,
@@ -1044,7 +1045,7 @@ export async function claimMaterial(params: {
 export async function getClaimedMaterialViewUrl(params: {
   userId: string;
   materialId: string;
-}): Promise<string> {
+}): Promise<MaterialViewResponseDTO> {
   const serviceClient = createServiceClient();
   const { data: claim, error: claimError } = await serviceClient
     .from('material_claims')
@@ -1058,7 +1059,7 @@ export async function getClaimedMaterialViewUrl(params: {
 
   const { data: material, error: materialError } = await serviceClient
     .from('materials')
-    .select('status, storage_key')
+    .select('name, format, status, storage_key')
     .eq('id', params.materialId)
     .single();
 
@@ -1077,7 +1078,11 @@ export async function getClaimedMaterialViewUrl(params: {
   if (signError || !signed?.signedUrl) {
     throw new Error(`生成查看链接失败：${signError?.message ?? '未知错误'}`);
   }
-  return signed.signedUrl;
+  return {
+    viewUrl: signed.signedUrl,
+    name: material.name as string,
+    format: material.format as MaterialViewResponseDTO['format'],
+  };
 }
 
 export async function listLandingMaterials(params: {

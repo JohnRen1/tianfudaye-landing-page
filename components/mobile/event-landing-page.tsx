@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { buildPathWithTracking } from "@/lib/tracking-context";
 import { LoginModal } from "./login-modal";
 import { hydrateClientAuthFromServer } from "@/lib/client-auth";
-import { claimMaterial } from "@/lib/api/materials";
+import { claimMaterial, getMaterialViewUrl } from "@/lib/api/materials";
 import type { MaterialClaimStatus } from "@/lib/contracts/material";
 import type { LandingActivityType } from "@/lib/contracts/tracking";
 import { ACTIVITY_LANDING_DEFAULTS, displayActivityField, getActivityCoverPresentation } from "@/lib/activity-presentation";
@@ -59,10 +59,6 @@ interface EventLandingPageProps {
   isLoggedIn?: boolean;
   onLogin?: () => void;
   showActivitySections?: boolean;
-}
-
-function getMaterialViewPath(materialId: string): string {
-  return `/api/materials/${encodeURIComponent(materialId)}/view`;
 }
 
 export function EventLandingPage({
@@ -173,6 +169,22 @@ export function EventLandingPage({
         return;
       }
       window.alert(message);
+    } finally {
+      setClaimingMaterialId(null);
+    }
+  };
+
+  const handleMaterialView = (materialId: string) => {
+    router.push(`/materials/view?materialId=${encodeURIComponent(materialId)}`);
+  };
+
+  const handleMaterialDownload = async (materialId: string) => {
+    setClaimingMaterialId(materialId);
+    try {
+      const { viewUrl } = await getMaterialViewUrl(materialId);
+      window.location.assign(viewUrl);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "资料下载失败");
     } finally {
       setClaimingMaterialId(null);
     }
@@ -320,6 +332,7 @@ export function EventLandingPage({
                     </div>
                   ) : materials.map((material) => {
                     const isDownloaded = downloadedMaterials.includes(material.id) || material.claimStatus === "claimed";
+                    const canPreviewInPage = material.format.toLowerCase() === "pdf";
                     const needsCompanyInfo = material.claimStatus === "needs_company_info";
                     const Icon = material.format === "Excel" ? ClipboardCheck : FileText;
                     const isClaiming = claimingMaterialId === material.id;
@@ -353,36 +366,52 @@ export function EventLandingPage({
                             ) : null}
                           </div>
                         </div>
-                        <Button
-                          asChild={isDownloaded}
-                          size="sm"
-                          variant={isDownloaded ? "outline" : "default"}
-                          className={cn(
-                            "h-8 min-w-[72px]",
-                            !isDownloaded && needsCompanyInfo && "bg-primary text-primary-foreground hover:bg-primary/90",
-                            !isDownloaded && !needsCompanyInfo &&
-                              "bg-accent text-accent-foreground hover:bg-accent/90"
+                        <div className="shrink-0">
+                          <Button
+                            size="sm"
+                            variant={isDownloaded ? "outline" : "default"}
+                            className={cn(
+                              "h-8 min-w-[72px]",
+                              !isDownloaded && needsCompanyInfo && "bg-primary text-primary-foreground hover:bg-primary/90",
+                              !isDownloaded && !needsCompanyInfo &&
+                                "bg-accent text-accent-foreground hover:bg-accent/90"
+                            )}
+                            disabled={isClaiming}
+                            onClick={() => {
+                              if (isDownloaded) {
+                                if (canPreviewInPage) {
+                                  handleMaterialView(material.id);
+                                  return;
+                                }
+                                void handleMaterialDownload(material.id);
+                                return;
+                              }
+                              void handleMaterialClick(material);
+                            }}
+                          >
+                            {isDownloaded ? (
+                              <>
+                                <CheckCircle className="mr-1 h-3 w-3" />
+                                查看资料
+                              </>
+                            ) : needsCompanyInfo ? (
+                              <>
+                                <LockKeyhole className="mr-1 h-3 w-3" />
+                                补充后领取
+                              </>
+                            ) : (
+                              <>
+                                <Download className="mr-1 h-3 w-3" />
+                                领取
+                              </>
+                            )}
+                          </Button>
+                          {isDownloaded && !canPreviewInPage && (
+                            <p className="mt-1 max-w-[120px] text-right text-[10px] leading-4 text-muted-foreground">
+                              点击后下载，使用 WPS/Office 查看
+                            </p>
                           )}
-                          disabled={isClaiming}
-                          {...(isDownloaded ? {} : { onClick: () => void handleMaterialClick(material) })}
-                        >
-                          {isDownloaded ? (
-                            <a href={getMaterialViewPath(material.id)}>
-                              <CheckCircle className="mr-1 h-3 w-3" />
-                              查看资料
-                            </a>
-                          ) : needsCompanyInfo ? (
-                            <>
-                              <LockKeyhole className="mr-1 h-3 w-3" />
-                              补充后领取
-                            </>
-                          ) : (
-                            <>
-                              <Download className="mr-1 h-3 w-3" />
-                              领取
-                            </>
-                          )}
-                        </Button>
+                        </div>
                       </div>
                     );
                   })}

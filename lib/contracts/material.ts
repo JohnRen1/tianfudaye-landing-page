@@ -211,6 +211,16 @@ export interface MaterialClaimCreateResponseDTO {
   downloadUrlExpiresAt: string;
 }
 
+/** 已领取资料的查看链接响应。 */
+export interface MaterialViewResponseDTO {
+  /** 每次查看时由服务端生成的短期签名链接。 */
+  viewUrl: string;
+  /** 资料名称，用于页面内预览标题。 */
+  name: string;
+  /** 资料格式，用于选择页面内预览或下载兜底。 */
+  format: FileFormat;
+}
+
 // ===========================================================================
 // 落地页资料统计（供页面顶部 3 个统计数字展示）
 // ===========================================================================

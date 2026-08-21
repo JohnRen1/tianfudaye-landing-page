@@ -9,6 +9,7 @@ import type {
   MaterialLandingItemDTO,
   MaterialLandingQueryDTO,
   MaterialClaimCreateResponseDTO,
+  MaterialViewResponseDTO,
 } from '../contracts/material';
 import type { PaginatedData } from '../contracts/shared';
 
@@ -34,4 +35,14 @@ export async function claimMaterial(
     materialId,
     ...(activityId !== undefined ? { activityId } : {}),
   });
+}
+
+/**
+ * 获取已领取资料的查看地址。
+ * 请求会携带端用户 Authorization；客户端随后在当前页面导航，避免移动端弹窗限制。
+ */
+export async function getMaterialViewUrl(materialId: string): Promise<MaterialViewResponseDTO> {
+  return apiGet<MaterialViewResponseDTO>(
+    `/api/materials/${encodeURIComponent(materialId)}/view`,
+  );
 }

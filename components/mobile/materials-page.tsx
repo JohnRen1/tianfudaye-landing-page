@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import { claimMaterial, getMaterials } from "@/lib/api/materials";
+import { claimMaterial, getMaterials, getMaterialViewUrl } from "@/lib/api/materials";
 import { hydrateClientAuthFromServer, isClientLoggedIn } from "@/lib/client-auth";
 import { buildPathWithTracking } from "@/lib/tracking-context";
 import { LoginModal } from "./login-modal";
@@ -63,10 +63,6 @@ function formatFileSize(bytes: number | null): string {
 
 function isSafeInternalPath(value: string | null): value is string {
   return Boolean(value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\"));
-}
-
-function getMaterialViewPath(materialId: string): string {
-  return `/api/materials/${encodeURIComponent(materialId)}/view`;
 }
 
 export function MaterialsPage() {
@@ -147,6 +143,22 @@ export function MaterialsPage() {
         return;
       }
       window.alert(message);
+    } finally {
+      setClaimingId(null);
+    }
+  };
+
+  const handleView = (materialId: string) => {
+    router.push(`/materials/view?materialId=${encodeURIComponent(materialId)}`);
+  };
+
+  const handleDownload = async (materialId: string) => {
+    setClaimingId(materialId);
+    try {
+      const { viewUrl } = await getMaterialViewUrl(materialId);
+      window.location.assign(viewUrl);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "资料下载失败");
     } finally {
       setClaimingId(null);
     }
@@ -265,6 +277,7 @@ export function MaterialsPage() {
               visibleMaterials.map((material) => {
                 const Icon = getMaterialIcon(material.format);
                 const isClaimed = material.claimStatus === "claimed";
+                const canPreviewInPage = material.format === "pdf";
                 const needsInfo = material.claimStatus === "needs_company_info";
                 const isNeedsLogin = material.claimStatus === "needs_login";
                 const isClaiming = claimingId === material.id;
@@ -333,7 +346,6 @@ export function MaterialsPage() {
                       </div>
 
                       <Button
-                        asChild={isClaimed}
                         className={cn(
                           "h-10 w-full rounded-xl",
                           isClaimed && "border-success/20 bg-success/10 text-success hover:bg-success/10",
@@ -343,13 +355,23 @@ export function MaterialsPage() {
                         )}
                         variant={isClaimed ? "outline" : "default"}
                         disabled={isClaiming}
-                        {...(isClaimed ? {} : { onClick: () => void handleClaim(material) })}
+                        onClick={() => {
+                          if (isClaimed) {
+                            if (canPreviewInPage) {
+                              handleView(material.id);
+                              return;
+                            }
+                            void handleDownload(material.id);
+                            return;
+                          }
+                          void handleClaim(material);
+                        }}
                       >
                         {isClaimed ? (
-                          <a href={getMaterialViewPath(material.id)}>
+                          <>
                             <CheckCircle className="mr-2 h-4 w-4" />
                             查看资料
-                          </a>
+                          </>
                         ) : (
                           <>
                             {!needsInfo && !isNeedsLogin && <Download className="mr-2 h-4 w-4" />}
@@ -358,6 +380,11 @@ export function MaterialsPage() {
                           </>
                         )}
                       </Button>
+                      {isClaimed && !canPreviewInPage && (
+                        <p className="mt-2 text-center text-xs leading-5 text-muted-foreground">
+                          {formatLabel} 文件将下载后使用 WPS、Office 等应用查看
+                        </p>
+                      )}
                     </CardContent>
                   </Card>
                 );
