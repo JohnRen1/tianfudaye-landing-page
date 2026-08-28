@@ -12,7 +12,7 @@ LANDING_PID_FILE="${RUN_DIR}/landing.pid"
 RAG_LOG="${RUN_DIR}/rag-api.log"
 LANDING_LOG="${RUN_DIR}/landing.log"
 AGENT_CONTAINER="tax-agent-service"
-AGENT_IMAGE="tax-agent-service:0.2.0"
+AGENT_IMAGE="${TAX_AGENT_IMAGE:-tax-agent-service:0.4.0}"
 
 QDRANT_URL=""
 RAG_API_HOST=""
@@ -294,7 +294,7 @@ start_all() {
   (
     cd "${AGENT_ROOT}"
     docker build -t "${AGENT_IMAGE}" .
-    ./docker_start.sh --recreate
+    TAX_AGENT_IMAGE="${AGENT_IMAGE}" ./docker_start.sh --recreate
   )
   wait_for_url "税务 Agent" "${AGENT_URL}/health" 60 \
     || fail "税务 Agent 启动失败，请执行：docker logs ${AGENT_CONTAINER}"
@@ -428,6 +428,7 @@ show_help() {
 可覆盖项目路径：
   TAX_RAG_ROOT=/path/to/税务法规RAG
   TAX_AGENT_ROOT=/path/to/税务Agent客服
+  TAX_AGENT_IMAGE=tax-agent-service:v2-local-YYYYMMDD  # 指定 Agent 镜像标签
 
 局域网测试：
   TAX_LAN_IP=192.168.0.133       # 二维码生成时使用的电脑局域网 IP

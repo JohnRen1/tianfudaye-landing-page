@@ -25,6 +25,7 @@ import { saveExpertReview, sendMessageStream, transcribeSpeech } from "@/lib/api
 import { getExpertStatus } from "@/lib/api/auth";
 import type { AiAnswerBodyDTO, AiChatRequestDTO, ChatMessageDTO, AiCitationDTO, PolicyRelationDTO } from "@/lib/contracts/ai-chat";
 import { getClientAuthToken, hydrateClientAuthFromServer, isClientLoggedIn } from "@/lib/client-auth";
+import { normalizeMarkdownForRender } from "@/lib/markdown";
 import { buildPathWithTracking } from "@/lib/tracking-context";
 import {
   CHAT_STATE_STORAGE_KEY_PREFIX,
@@ -200,6 +201,7 @@ function encodeWav(samples: Float32Array, sampleRate: number): Blob {
 }
 
 function MarkdownAnswer({ content }: { content: string }) {
+  const normalizedContent = normalizeMarkdownForRender(content);
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -257,7 +259,7 @@ function MarkdownAnswer({ content }: { content: string }) {
           ),
       }}
     >
-      {content}
+      {normalizedContent}
     </ReactMarkdown>
   );
 }
