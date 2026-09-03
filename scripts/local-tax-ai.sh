@@ -290,10 +290,17 @@ start_all() {
   wait_for_url "RAG API" "${RAG_URL}/health" 90 \
     || fail "RAG API 启动失败，请查看 ${RAG_LOG}"
 
-  say "3/4 构建当前源码并启动税务 Agent 容器"
+  say "3/4 准备税务 Agent 容器"
   (
     cd "${AGENT_ROOT}"
-    docker build -t "${AGENT_IMAGE}" .
+    if [[ "${TAX_AGENT_SKIP_BUILD:-0}" == "1" || "${TAX_AGENT_SKIP_BUILD:-}" == "true" ]]; then
+      docker image inspect "${AGENT_IMAGE}" >/dev/null 2>&1 \
+        || fail "找不到已存在的 Agent 镜像 ${AGENT_IMAGE}；请去掉 TAX_AGENT_SKIP_BUILD 后重试"
+      say "跳过构建，直接使用已有镜像：${AGENT_IMAGE}"
+    else
+      say "构建当前源码并标记为：${AGENT_IMAGE}"
+      docker build -t "${AGENT_IMAGE}" .
+    fi
     TAX_AGENT_IMAGE="${AGENT_IMAGE}" ./docker_start.sh --recreate
   )
   wait_for_url "税务 Agent" "${AGENT_URL}/health" 60 \
@@ -429,6 +436,7 @@ show_help() {
   TAX_RAG_ROOT=/path/to/税务法规RAG
   TAX_AGENT_ROOT=/path/to/税务Agent客服
   TAX_AGENT_IMAGE=tax-agent-service:v2-local-YYYYMMDD  # 指定 Agent 镜像标签
+  TAX_AGENT_SKIP_BUILD=1                               # 已有镜像时跳过构建
 
 局域网测试：
   TAX_LAN_IP=192.168.0.133       # 二维码生成时使用的电脑局域网 IP

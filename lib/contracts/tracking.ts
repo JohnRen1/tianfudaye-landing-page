@@ -134,7 +134,9 @@ export interface QrScanTrackRequestDTO {
    * 来自 URL 参数 qr_id，即 qr_codes.id（系统主键）。
    * S2 核心：唯一允许的二维码查询键，不接受 inviteCode。
    */
-  qrId: string;
+  qrId?: string;
+  /** 微信小程序码 scene；由服务端解析为 qr_codes.id。 */
+  scene?: string;
   /** 同一浏览器/设备针对同一二维码生成的稳定会话 id，用于扫码去重。 */
   sessionId?: string;
   /** 用户代理字符串，用于设备类型统计。可选。 */

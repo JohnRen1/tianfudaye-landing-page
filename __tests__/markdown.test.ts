@@ -14,6 +14,12 @@ describe('normalizeMarkdownForRender', () => {
     );
   });
 
+  it('separates CJK text before emphasis so inline strong text renders', () => {
+    expect(normalizeMarkdownForRender('如果员工退休后**继续留任**，公司再发放报酬')).toBe(
+      '如果员工退休后\u00a0**继续留任**，公司再发放报酬',
+    );
+  });
+
   it('does not show an unmatched bold marker during streaming', () => {
     expect(normalizeMarkdownForRender('**先说结论：')).toBe('先说结论：');
   });

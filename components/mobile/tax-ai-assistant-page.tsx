@@ -19,7 +19,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { LoginModal } from "./login-modal";
 import { saveExpertReview, sendMessageStream, transcribeSpeech } from "@/lib/api/ai-chat";
 import { getExpertStatus } from "@/lib/api/auth";
@@ -553,6 +553,7 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const [isThinking, setIsThinking] = useState(false);
   const [messages, setMessages] = useState<ChatMessageDTO[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -630,6 +631,16 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
+
+  useEffect(() => {
+    const input = chatInputRef.current;
+    if (!input) return;
+
+    input.style.height = "0px";
+    const nextHeight = Math.min(input.scrollHeight, 128);
+    input.style.height = `${Math.max(nextHeight, 48)}px`;
+    input.style.overflowY = input.scrollHeight > 128 ? "auto" : "hidden";
+  }, [inputValue]);
 
   useEffect(() => {
     return () => {
@@ -942,7 +953,7 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
       </main>
 
       <div className="fixed bottom-0 left-1/2 right-auto w-full max-w-[390px] -translate-x-1/2 border-t border-border bg-card/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-lg backdrop-blur">
-        <div className="mx-auto flex max-w-[390px] gap-2">
+        <div className="mx-auto flex max-w-[390px] items-end gap-2">
           <Button
             variant={isRecording ? "destructive" : "outline"}
             className="h-12 w-12 shrink-0 rounded-xl"
@@ -975,25 +986,39 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
               <MicOff className="h-5 w-5 text-muted-foreground" />
             )}
           </Button>
-          <Input
-            placeholder={
-              isReviewLocked
-                ? "该回答已进入修正，请重新开始会话"
-                : isRecording
-                  ? "正在听，请说出您的问题"
-                    : isTranscribing
-                      ? "正在识别语音..."
-                    : "直接描述问题；需要展开可说“详细说明”"
-            }
-            value={inputValue}
-            disabled={isReviewLocked || isTranscribing}
-            onChange={(event) => setInputValue(event.target.value)}
-            onFocus={requireLogin}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") submitQuestion(inputValue);
-            }}
-            className="h-12 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl text-base placeholder:text-[10px] placeholder:text-muted-foreground/55 sm:placeholder:text-xs"
-          />
+          <div className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-background pr-1 transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
+            {!inputValue && (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 flex items-center px-3 py-3 text-[10px] leading-6 text-muted-foreground/55 sm:text-xs"
+              >
+                {isReviewLocked
+                  ? "该回答已进入修正，请重新开始会话"
+                  : isRecording
+                    ? "正在听，请说出您的问题"
+                      : isTranscribing
+                        ? "正在识别语音..."
+                      : "直接描述问题；需要展开可说“详细说明”"}
+              </span>
+            )}
+            <Textarea
+              ref={chatInputRef}
+              placeholder=""
+              value={inputValue}
+              disabled={isReviewLocked || isTranscribing}
+              onChange={(event) => setInputValue(event.target.value)}
+              onFocus={requireLogin}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  submitQuestion(inputValue);
+                }
+              }}
+              rows={1}
+              aria-label="问题输入"
+              className="chat-input-scroll min-h-12 w-full resize-none border-0 px-3 py-3 text-base leading-6 shadow-none placeholder:text-[10px] placeholder:text-muted-foreground/55 focus-visible:border-transparent focus-visible:ring-0 sm:placeholder:text-xs"
+            />
+          </div>
           <Button
             className="h-12 w-12 shrink-0 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90"
             onClick={() => submitQuestion(inputValue)}

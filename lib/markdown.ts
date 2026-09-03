@@ -14,8 +14,23 @@ export function normalizeMarkdownForRender(content: string): string {
     const lastMarker = normalized.lastIndexOf("**");
     normalized = `${normalized.slice(0, lastMarker)}${normalized.slice(lastMarker + 2)}`;
   }
-  // CommonMark treats CJK text immediately following a closing emphasis
-  // marker as part of the same word. Add a non-breaking space so
-  // `**结论：**目前` is parsed as bold text instead of literal asterisks.
-  return normalized.replace(/(\*\*[^*\n]+?\*\*)(?=[\u3400-\u9fff\uf900-\ufaff])/g, "$1\u00a0");
+  // CommonMark's left/right-flanking rules can reject strong emphasis when
+  // Chinese text touches either side of the marker. Treat markers by their
+  // position in each pair, rather than matching from one marker to another:
+  // a closing marker is also preceded by CJK text, so a broad span regex can
+  // accidentally add whitespace *inside* the emphasis span.
+  let markerIndex = 0;
+  return normalized.replace(/\*\*/g, (marker, offset, source) => {
+    const isOpening = markerIndex % 2 === 0;
+    markerIndex += 1;
+    const previous = source[offset - 1];
+    const next = source[offset + marker.length];
+    const before = isOpening && isCjk(previous) ? "\u00a0" : "";
+    const after = !isOpening && isCjk(next) ? "\u00a0" : "";
+    return `${before}${marker}${after}`;
+  });
+}
+
+function isCjk(character: string | undefined): boolean {
+  return character !== undefined && /[\u3400-\u9fff\uf900-\ufaff]/.test(character);
 }

@@ -6,7 +6,7 @@
  */
 
 import type { ApiResponse } from '../contracts/shared';
-import { getClientAuthToken } from '../client-auth';
+import { clearClientAuthToken, getClientAuthToken, notifyClientAuthRequired } from '../client-auth';
 
 const TOKEN_KEY = 'user-token';
 
@@ -46,6 +46,11 @@ async function handleResponse<T>(res: Response): Promise<T> {
   }
 
   if (!res.ok || !body.success) {
+    const code = !body.success ? body.error.code : 'HTTP_ERROR';
+    if (res.status === 401 || code === 'AUTH_REQUIRED' || code.endsWith('_AUTH_REQUIRED')) {
+      clearClientAuthToken();
+      notifyClientAuthRequired();
+    }
     if (!body.success) {
       throw new ApiError(body.error.code, body.error.message, res.status);
     }

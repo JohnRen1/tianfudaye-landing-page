@@ -1,4 +1,5 @@
 const USER_TOKEN_KEY = 'user-token';
+export const CLIENT_AUTH_REQUIRED_EVENT = 'tax-client-auth-required';
 
 export function getClientAuthToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -17,6 +18,11 @@ export function setClientAuthToken(token: string): void {
 export function clearClientAuthToken(): void {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(USER_TOKEN_KEY);
+}
+
+export function notifyClientAuthRequired(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event(CLIENT_AUTH_REQUIRED_EVENT));
 }
 
 /**
