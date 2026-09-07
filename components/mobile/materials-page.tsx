@@ -1,4 +1,5 @@
 "use client";
+import { PageLoadingState } from './page-loading-state';
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -80,6 +81,7 @@ export function MaterialsPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [pendingMaterial, setPendingMaterial] = useState<MaterialLandingItemDTO | null>(null);
 
   const visibleMaterials = useMemo(
@@ -104,6 +106,7 @@ export function MaterialsPage() {
 
   useEffect(() => {
     void hydrateClientAuthFromServer().then(() => {
+      setCheckingAuth(false);
       void loadMaterials();
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -115,6 +118,7 @@ export function MaterialsPage() {
   };
 
   const handleClaim = async (material: MaterialLandingItemDTO) => {
+    if (checkingAuth) return;
     if (material.claimStatus === "needs_login" || !isClientLoggedIn()) {
       setPendingMaterial(material);
       setShowLoginModal(true);
@@ -168,7 +172,8 @@ export function MaterialsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background pb-28">
+    <div className="relative min-h-screen bg-background pb-28">
+      {loading && <PageLoadingState message="正在加载资料…" />}
       <div className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-6 pt-4 text-primary-foreground">
         <div className="absolute -right-20 top-5 h-44 w-44 rounded-full border border-white/15" />
         <div className="absolute -right-8 top-16 h-24 w-24 rounded-full border border-white/20" />
@@ -206,16 +211,16 @@ export function MaterialsPage() {
         <Card className="border-0 shadow-lg shadow-primary/10">
           <CardContent className="grid grid-cols-3 gap-3 p-4 text-center">
             <div>
-              <p className="text-lg font-bold text-foreground">{materials.length}</p>
+              <p className="text-lg font-bold text-foreground" aria-busy={loading}>{loading || errorMessage ? '—' : materials.length}</p>
               <p className="text-xs text-muted-foreground">资料总数</p>
             </div>
             <div>
-              <p className="text-lg font-bold text-success">{totalClaimed}</p>
+              <p className="text-lg font-bold text-success" aria-busy={loading}>{loading || errorMessage ? '—' : totalClaimed}</p>
               <p className="text-xs text-muted-foreground">已领取</p>
             </div>
             <div>
               <p className="text-lg font-bold text-primary">
-                {materials.filter((material) => material.needCompanyInfo).length}
+                {loading || errorMessage ? '—' : materials.filter((material) => material.needCompanyInfo).length}
               </p>
               <p className="text-xs text-muted-foreground">需补充信息</p>
             </div>
@@ -247,13 +252,7 @@ export function MaterialsPage() {
 
         {categoryTabs.map((tab) => (
           <TabsContent key={tab.value} value={tab.value} className="mt-4 space-y-3">
-            {loading ? (
-              <Card className="border-0 shadow-sm">
-                <CardContent className="px-6 py-12 text-center text-sm text-muted-foreground">
-                  正在加载资料...
-                </CardContent>
-              </Card>
-            ) : errorMessage ? (
+            {loading && materials.length === 0 ? null : errorMessage ? (
               <Card className="border-0 shadow-sm">
                 <CardContent className="space-y-3 px-6 py-12 text-center">
                   <p className="text-sm text-destructive">{errorMessage}</p>
@@ -342,7 +341,7 @@ export function MaterialsPage() {
                             "bg-accent text-accent-foreground hover:bg-accent/90"
                         )}
                         variant={isClaimed ? "outline" : "default"}
-                        disabled={isClaiming}
+                        disabled={checkingAuth || loading || isClaiming}
                         onClick={() => {
                           if (isClaimed) {
                             handleView(material.id);

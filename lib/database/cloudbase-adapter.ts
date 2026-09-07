@@ -115,6 +115,9 @@ export const getAssessmentReportById: typeof SupabaseAdapter.getAssessmentReport
 export const saveAssessmentReport: typeof SupabaseAdapter.saveAssessmentReport = async () =>
   notImplemented('saveAssessmentReport');
 
+export const listSavedAssessmentReports: typeof SupabaseAdapter.listSavedAssessmentReports = async () =>
+  notImplemented('listSavedAssessmentReports');
+
 export const unlockAssessmentReport: typeof SupabaseAdapter.unlockAssessmentReport = async () =>
   notImplemented('unlockAssessmentReport');
 

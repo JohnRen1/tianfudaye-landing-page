@@ -10,10 +10,11 @@ export function fail(
   message: string,
   status = 400,
   details?: unknown,
+  requestId = crypto.randomUUID(),
 ): NextResponse<ApiFailure> {
   const body: ApiFailure = {
     success: false,
-    error: { code, message, requestId: crypto.randomUUID() },
+    error: { code, message, requestId },
   };
   if (process.env.NODE_ENV !== 'production' && details !== undefined) {
     body.error.details = details;

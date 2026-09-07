@@ -1,4 +1,5 @@
 "use client";
+import { InitialDataFrame, PageLoadingState } from '@/components/mobile/page-loading-state';
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -49,6 +50,7 @@ function CheckinContent() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -78,8 +80,9 @@ function CheckinContent() {
   useEffect(() => {
     void hydrateClientAuthFromServer().then((loggedIn) => {
       setIsLoggedIn(loggedIn);
+      setCheckingAuth(false);
+      void loadPage();
     });
-    void loadPage();
   }, [loadPage]);
 
   const doCheckin = async () => {
@@ -113,6 +116,7 @@ function CheckinContent() {
   };
 
   const handleCheckinClick = async () => {
+    if (loading || checkingAuth) return;
     if (!isLoggedIn) {
       setShowLoginModal(true);
       return;
@@ -127,13 +131,8 @@ function CheckinContent() {
   };
 
   // ——— 加载中 ———
-  if (loading) {
-    return (
-      <div className="mx-auto flex min-h-screen max-w-[390px] flex-col items-center justify-center gap-4 bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">正在读取签到信息…</p>
-      </div>
-    );
+  if ((loading || checkingAuth) && !pageData) {
+    return <InitialDataFrame title="活动签到" description="确认活动信息后完成签到" action="签到" onBack={() => router.replace(landingReturnPath)} />;
   }
 
   // ——— 加载失败 ———
@@ -239,7 +238,8 @@ function CheckinContent() {
 
   // ——— 签到主界面 ———
   return (
-    <div className="mx-auto min-h-screen max-w-[390px] bg-background pb-28">
+    <div className="relative mx-auto min-h-screen max-w-[390px] bg-background pb-28">
+      {(loading || checkingAuth) && <PageLoadingState message="正在读取签到信息…" />}
       {/* 顶部渐变 */}
       <div className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
         <div className="absolute -right-16 top-8 h-40 w-40 rounded-full bg-white/5" />
@@ -380,10 +380,7 @@ export default function CheckinPage() {
   return (
     <Suspense
       fallback={
-        <div className="mx-auto flex min-h-screen max-w-[390px] flex-col items-center justify-center gap-4 bg-background">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">正在读取签到信息…</p>
-        </div>
+        <InitialDataFrame title="活动签到" description="确认活动信息后完成签到" action="签到" />
       }
     >
       <CheckinContent />

@@ -24,6 +24,7 @@ export const listAssessmentQuestions = adapter.listAssessmentQuestions;
 export const submitAssessment = adapter.submitAssessment;
 export const getAssessmentReportById = adapter.getAssessmentReportById;
 export const saveAssessmentReport = adapter.saveAssessmentReport;
+export const listSavedAssessmentReports = adapter.listSavedAssessmentReports;
 export const unlockAssessmentReport = adapter.unlockAssessmentReport;
 export const getAppointmentUserProfile = adapter.getAppointmentUserProfile;
 export const createAppointment = adapter.createAppointment;

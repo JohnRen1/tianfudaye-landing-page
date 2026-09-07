@@ -4,7 +4,16 @@
  * 封装：发送问题到 AI 问答接口。
  */
 
-import { apiPost } from './client';
+import { apiGet, apiPost } from './client';
+import type { ChatHistoryPage, ChatHistoryTurn } from '../ai-history';
+
+export function getChatHistory(page = 1): Promise<ChatHistoryPage> {
+  return apiGet('/api/ai/history', { page });
+}
+
+export function getChatHistorySession(session: string): Promise<ChatHistoryTurn[]> {
+  return apiGet('/api/ai/history', { session });
+}
 import type { AiChatRequestDTO, AiChatResponseDTO } from '../contracts/ai-chat';
 import type { ExpertReviewRequestDTO, ExpertReviewResponseDTO, SpeechToTextResponseDTO } from '../contracts/ai-chat';
 import { getClientAuthToken } from '../client-auth';

@@ -13,6 +13,7 @@ import type {
   UnlockReportResponseDTO,
   SaveReportResponseDTO,
 } from '../contracts/assessment';
+import type { UserMeAssessmentSummaryDTO } from '../contracts/auth';
 
 /**
  * 获取题目列表
@@ -61,4 +62,12 @@ export async function unlockReport(id: string): Promise<{ report: AssessmentRepo
  */
 export async function saveReport(id: string): Promise<{ saved: true; savedAt: string }> {
   return apiPost<SaveReportResponseDTO>(`/api/assessment/report/${id}/save`);
+}
+
+/**
+ * 获取当前用户已保存的报告
+ * GET /api/auth/me/reports
+ */
+export async function getMyReports(): Promise<UserMeAssessmentSummaryDTO[]> {
+  return apiGet<UserMeAssessmentSummaryDTO[]>('/api/auth/me/reports');
 }

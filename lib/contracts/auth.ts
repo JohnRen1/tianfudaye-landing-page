@@ -210,7 +210,7 @@ export interface ExpertStatusDTO {
 
 /**
  * UserMeAssessmentSummaryDTO — 用户个人报告摘要（落地页"我的报告"展示）
- * 对应 GET /api/auth/me/report
+ * 对应 GET /api/auth/me/reports
  * 落地页仅展示风险等级和关键模块，不展示完整原始数据（S5：防止 score 篡改）
  */
 export interface UserMeAssessmentSummaryDTO {

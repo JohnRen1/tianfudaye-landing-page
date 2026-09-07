@@ -26,6 +26,7 @@ import type {
   CurrentUserDTO,
   PhoneLoginResponseDTO,
   SendCodeResponseDTO,
+  UserMeAssessmentSummaryDTO,
   UserProfileCompleteDTO,
   UserProfileCompletedResponseDTO,
   WechatLoginResponseDTO,
@@ -549,16 +550,47 @@ export async function getAssessmentReportById(reportId: string): Promise<{
   };
 }
 
-export async function saveAssessmentReport(reportId: string): Promise<SaveReportResponseDTO> {
+export async function saveAssessmentReport(
+  reportId: string,
+  userId: string,
+): Promise<SaveReportResponseDTO> {
   const serviceClient = createServiceClient();
   const savedAt = new Date().toISOString();
   const { error } = await serviceClient
     .from('assessment_reports')
-    .update({ is_saved: true })
+    .update({ is_saved: true, user_id: userId })
     .eq('id', reportId);
 
   if (error) throw new Error(error.message);
   return { saved: true, savedAt };
+}
+
+export async function listSavedAssessmentReports(
+  userId: string,
+): Promise<UserMeAssessmentSummaryDTO[]> {
+  const serviceClient = createServiceClient();
+  const { data: rows, error } = await serviceClient
+    .from('assessment_reports')
+    .select('id, score, risk_level, modules, completed_at')
+    .eq('user_id', userId)
+    .eq('is_saved', true)
+    .order('completed_at', { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  return (rows ?? []).map((row) => {
+    const parsedModules = parseReportModules(row.modules);
+    const keyModules = parsedModules.filter((item) => item.riskLevel !== 'low');
+    const displayModules = keyModules.length > 0 ? keyModules : parsedModules;
+
+    return {
+      id: row.id as string,
+      score: row.score as number,
+      riskLevel: normalizeRiskLevel(row.risk_level),
+      modules: displayModules.slice(0, 3).map((item) => item.moduleName),
+      completedAt: row.completed_at as string,
+    };
+  });
 }
 
 export async function unlockAssessmentReport(

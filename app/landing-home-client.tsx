@@ -143,6 +143,11 @@ function ActivityStatusNotice({ activity, status }: { activity: ActivityLandingD
 }
 
 export function LandingHomeClient({ fallback }: LandingHomeClientProps) {
+  const params = useSearchParams();
+  return <LandingHomeContent key={params.toString()} fallback={fallback} />;
+}
+
+function LandingHomeContent({ fallback }: LandingHomeClientProps) {
   const searchParams = useSearchParams();
   const [activity, setActivity] = useState<ActivityLandingDetailDTO | null>(null);
   const [qrDisabled, setQrDisabled] = useState(false);

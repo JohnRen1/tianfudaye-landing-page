@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { CLIENT_AUTH_REQUIRED_EVENT, hydrateClientAuthFromServer, isClientLoggedIn } from '@/lib/client-auth';
 import { isProtectedBusinessPath } from '@/lib/route-auth';
 import { LoginModal } from './login-modal';
+import { PageLoadingState } from './page-loading-state';
 
 function safeReturnPath(): string {
   if (typeof window === 'undefined') return '/';
@@ -17,6 +18,11 @@ function safeReturnPath(): string {
 }
 
 export function RouteAuthGate({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  return <RouteAuthGateContent key={pathname}>{children}</RouteAuthGateContent>;
+}
+
+function RouteAuthGateContent({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const protectedRoute = isProtectedBusinessPath(pathname);
@@ -57,7 +63,8 @@ export function RouteAuthGate({ children }: { children: ReactNode }) {
   if (!protectedRoute) return children;
 
   return <>
-    {allowed ? children : <main className='min-h-screen bg-background' aria-busy='true' />}
+    {!allowed && !loginOpen && <PageLoadingState message="正在读取登录状态…" variant="center" />}
+    {!loginOpen && <div inert={!allowed} aria-busy={!allowed}>{children}</div>}
     <LoginModal
       open={loginOpen}
       onOpenChange={(open) => {

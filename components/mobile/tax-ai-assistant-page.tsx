@@ -1,4 +1,5 @@
 "use client";
+import { PageLoadingState } from './page-loading-state';
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -8,6 +9,8 @@ import {
   Bot,
   ExternalLink,
   Headphones,
+  History,
+  Plus,
   Loader2,
   Mic,
   MicOff,
@@ -21,8 +24,9 @@ import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { LoginModal } from "./login-modal";
-import { saveExpertReview, sendMessageStream, transcribeSpeech } from "@/lib/api/ai-chat";
-import { getExpertStatus } from "@/lib/api/auth";
+import { getChatHistorySession, saveExpertReview, sendMessageStream, transcribeSpeech } from "@/lib/api/ai-chat";
+import { ApiError } from "@/lib/api/client";
+import { getExpertStatus, me } from "@/lib/api/auth";
 import type { AiAnswerBodyDTO, AiChatRequestDTO, ChatMessageDTO, AiCitationDTO, PolicyRelationDTO } from "@/lib/contracts/ai-chat";
 import { getClientAuthToken, hydrateClientAuthFromServer, isClientLoggedIn } from "@/lib/client-auth";
 import { normalizeMarkdownForRender } from "@/lib/markdown";
@@ -30,7 +34,6 @@ import { buildPathWithTracking } from "@/lib/tracking-context";
 import {
   CHAT_STATE_STORAGE_KEY_PREFIX,
   EXPERT_SESSION_STORAGE_KEY,
-  getChatStateStorageKey,
 } from "./tax-ai-chat-state";
 
 const quickQuestions = [
@@ -546,11 +549,19 @@ function AiLoadingCard() {
 }
 
 export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolean }) {
+  const params = useSearchParams();
+  return <TaxAiConversation key={`${expertMode}:${params.get("session") ?? "current"}`} expertMode={expertMode} />;
+}
+
+function TaxAiConversation({ expertMode = false }: { expertMode?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activityId = searchParams.get("activity_id") ?? searchParams.get("activity");
+  const requestedSession = expertMode ? null : searchParams.get("session");
+  const [restoreAttempt, setRestoreAttempt] = useState(0);
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(expertMode);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
@@ -591,42 +602,80 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
     if (expertMode) {
       setIsLoggedIn(true);
       setChatStateStorageKey(EXPERT_SESSION_STORAGE_KEY);
+      setIsAuthReady(true);
       return;
     }
     void hydrateClientAuthFromServer().then(async (loggedIn) => {
       setIsLoggedIn(loggedIn);
-      const token = getClientAuthToken();
-      setChatStateStorageKey(loggedIn ? getChatStateStorageKey(token) : null);
+      setIsAuthReady(true);
+      if (loggedIn) {
+        const user = await me();
+        setChatStateStorageKey(`${CHAT_STATE_STORAGE_KEY_PREFIX}user:${user.id}`);
+      }
       if (loggedIn && await isCurrentUserExpert()) {
         const targetPath = `/tax-ai-pro${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
         router.replace(targetPath);
       }
+    }).catch(() => {
+      setIsAuthReady(true);
+      setErrorMessage("登录状态加载失败，请刷新后重试");
     });
   }, [expertMode, router, searchParams]);
 
   useEffect(() => {
     if (chatStateStorageKey === null) return;
-    const storedState =
-      getStoredChatState(chatStateStorageKey) ?? findLegacyChatState(getClientAuthToken());
-    if (!storedState) {
+    let active = true;
+    setIsChatStateRestored(false);
+    setErrorMessage(null);
+    async function restore() {
+      const rootState = getStoredChatState(chatStateStorageKey!);
+      const selected = requestedSession ?? rootState?.sessionId ?? null;
+      const stored = (selected ? getStoredChatState(`${chatStateStorageKey}:session:${selected}`) : rootState)
+        ?? (rootState?.sessionId === selected ? rootState : null)
+        ?? (expertMode ? findLegacyChatState(getClientAuthToken()) : null);
+      let restoredMessages = stored?.messages ?? [];
+      // The cache key belongs to the server-verified user. Show it while revalidating.
+      if (active && stored) {
+        setMessages(restoredMessages);
+        setInputValue(stored.inputValue);
+      }
+      if (!expertMode && selected) {
+        try {
+          const turns = await getChatHistorySession(selected);
+          restoredMessages = turns.flatMap((turn, index): ChatMessageDTO[] => [
+            { id: index * 2, role: "user", content: turn.question },
+            { id: index * 2 + 1, role: "ai", answer: turn.answer, qaRecordId: turn.id },
+          ]);
+        } catch (error) {
+          // A local, not-yet-sent conversation has no server record yet.
+          if (!(error instanceof ApiError && error.status === 404 && stored && stored.messages.every((message) => message.role === "user"))) throw error;
+        }
+      }
+      if (!active) return;
+      setMessages(restoredMessages);
+      setSessionId(selected?.startsWith("record:") ? null : selected ?? (expertMode ? null : crypto.randomUUID()));
+      setInputValue(stored?.inputValue ?? "");
       setIsChatStateRestored(true);
-      return;
     }
-
-    const completedMessages = storedState.messages.filter(
-      (message) => message.role === "user" || message.answer !== null,
-    );
-    setMessages(completedMessages);
-    setSessionId(storedState.sessionId);
-    setInputValue(storedState.inputValue);
-    sessionStorage.setItem(chatStateStorageKey, JSON.stringify(storedState));
-    setIsChatStateRestored(true);
-  }, [chatStateStorageKey]);
+    void restore().catch((error: unknown) => {
+      if (active) setErrorMessage(error instanceof Error ? error.message : "对话加载失败，请重试");
+    });
+    return () => { active = false; };
+  }, [chatStateStorageKey, requestedSession, expertMode, restoreAttempt]);
 
   useEffect(() => {
     if (!isChatStateRestored || chatStateStorageKey === null) return;
-    persistChatState(chatStateStorageKey, messages, sessionId, inputValue);
-  }, [chatStateStorageKey, inputValue, isChatStateRestored, messages, sessionId]);
+    const storedSessionId = sessionId ?? requestedSession;
+    persistChatState(chatStateStorageKey, messages, storedSessionId, inputValue);
+    if (!expertMode && (requestedSession || sessionId)) {
+      persistChatState(`${chatStateStorageKey}:session:${storedSessionId}`, messages, storedSessionId, inputValue);
+    }
+    if (!expertMode && sessionId && requestedSession !== sessionId) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("session", sessionId);
+      router.replace(`${url.pathname}${url.search}`);
+    }
+  }, [chatStateStorageKey, inputValue, isChatStateRestored, messages, sessionId, requestedSession, expertMode, router]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -661,6 +710,7 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
 
   const requireLogin = () => {
     if (expertMode) return true;
+    if (!isAuthReady) return false;
     if (isLoggedIn) return true;
     setShowLoginModal(true);
     return false;
@@ -681,8 +731,8 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
     router.push(`${supportUrl.pathname}${supportUrl.search}`);
   };
   const restoreChatStateForCurrentUser = () => {
-    const token = getClientAuthToken();
-    setChatStateStorageKey(getChatStateStorageKey(token));
+    void me().then((user) => setChatStateStorageKey(`${CHAT_STATE_STORAGE_KEY_PREFIX}user:${user.id}`))
+      .catch(() => setErrorMessage("登录状态加载失败，请刷新后重试"));
   };
   const redirectExpertUserIfNeeded = async () => {
     if (expertMode) return;
@@ -692,7 +742,7 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
   };
 
   const startVoiceInput = async () => {
-    if (isThinking || isReviewLocked || isTranscribing || !requireLogin()) return;
+    if (!isChatStateRestored || isThinking || isReviewLocked || isTranscribing || !requireLogin()) return;
     if (voiceSupport === "insecure") {
       setErrorMessage("当前页面不是 HTTPS，暂时无法使用麦克风，请改用文字输入。");
       return;
@@ -765,7 +815,7 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
 
   const submitQuestion = async (question: string) => {
     const text = question.trim();
-    if (!text || isThinking || isReviewLocked || !requireLogin()) return;
+    if (!text || !isChatStateRestored || isThinking || isReviewLocked || isRecording || isTranscribing || !requireLogin()) return;
 
     const userMsgId = Date.now();
     const aiMsgId = userMsgId + 1;
@@ -842,22 +892,74 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
     router.replace(backPath);
   };
 
+  const switchLocked = isThinking || isRecording || isTranscribing || isReviewLocked;
+  const hasCompletedTurn = messages.some((message) => message.role === "ai" && message.answer !== null);
+  const canStartNewConversation = Boolean(chatStateStorageKey) && isChatStateRestored && hasCompletedTurn && !switchLocked;
+  const openHistory = () => {
+    if (switchLocked) return;
+    if (chatStateStorageKey && isChatStateRestored) {
+      const selected = sessionId ?? requestedSession;
+      persistChatState(chatStateStorageKey, messages, selected, inputValue);
+      if (selected) persistChatState(`${chatStateStorageKey}:session:${selected}`, messages, selected, inputValue);
+    }
+    const url = new URL(buildTrackedPath("/tax-ai/history"), "https://local.invalid");
+    url.searchParams.set("returnTo", currentPath);
+    router.push(`${url.pathname}${url.search}`);
+  };
+  const startNewConversation = () => {
+    if (!canStartNewConversation || !chatStateStorageKey) return;
+    const nextSession = crypto.randomUUID();
+    const selected = sessionId ?? requestedSession;
+    if (selected) persistChatState(`${chatStateStorageKey}:session:${selected}`, messages, selected, inputValue);
+    persistChatState(`${chatStateStorageKey}:session:${nextSession}`, [], nextSession, "");
+    const url = new URL(buildTrackedPath("/tax-ai"), "https://local.invalid");
+    url.searchParams.set("session", nextSession);
+    url.searchParams.set("returnTo", backPath);
+    router.push(`${url.pathname}${url.search}`);
+  };
+
   return (
-    <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden bg-background">
+    <div className="relative flex min-h-screen min-w-0 flex-col overflow-x-hidden bg-background">
+      {!isChatStateRestored && !errorMessage && <PageLoadingState message="正在恢复对话…" />}
       <header className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-6 pt-4 text-primary-foreground">
         <div className="absolute -right-20 top-5 h-44 w-44 rounded-full border border-white/15" />
         <div className="absolute -right-8 top-16 h-24 w-24 rounded-full border border-white/20" />
         <div className="absolute bottom-5 right-12 h-16 w-16 rounded-full bg-accent/20 blur-sm" />
         <div className="relative">
+          <div className="mb-6 flex items-center justify-between">
           <Button
             variant="ghost"
             size="icon"
-            className="mb-6 rounded-full text-white hover:bg-white/10 hover:text-white"
+            className="rounded-full text-white hover:bg-white/10 hover:text-white"
+            disabled={switchLocked}
             aria-label="返回"
             onClick={handleBack}
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
+          {!expertMode && <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              className="h-9 rounded-xl border border-white/20 bg-white/10 px-3 text-sm text-white shadow-sm backdrop-blur-sm hover:bg-white/15 hover:text-white"
+              disabled={switchLocked}
+              onClick={openHistory}
+              aria-label="打开历史对话"
+            >
+              <History className="mr-1 h-4 w-4 shrink-0" />
+              历史对话
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-9 rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white/90 shadow-sm backdrop-blur-sm hover:bg-white/15 hover:text-white"
+              disabled={!canStartNewConversation}
+              onClick={startNewConversation}
+              aria-label="开始新对话"
+            >
+              <Plus className="mr-1 h-4 w-4 shrink-0" />
+              新对话
+            </Button>
+          </div>}
+          </div>
 
           <div className="flex items-center gap-3">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/12 shadow-inner backdrop-blur">
@@ -875,7 +977,8 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
       </header>
 
       <main className="min-w-0 flex-1 space-y-4 px-4 pb-36 pt-4">
-        <section>
+        {!isChatStateRestored && errorMessage && <Button variant="outline" onClick={() => setRestoreAttempt((value) => value + 1)}>重新加载对话</Button>}
+        {isChatStateRestored && <section>
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-semibold">快捷问题</h2>
             {!isLoggedIn && <span className="text-xs text-muted-foreground">点击后需登录</span>}
@@ -884,6 +987,7 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
             {quickQuestions.map((question) => (
               <button
                 key={question}
+                disabled={!isChatStateRestored || switchLocked}
                 className="rounded-2xl border border-border bg-card p-3 text-left text-sm leading-snug shadow-sm transition hover:border-primary/30 hover:bg-primary/5"
                 onClick={() => submitQuestion(question)}
               >
@@ -891,7 +995,7 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
               </button>
             ))}
           </div>
-        </section>
+        </section>}
 
         {errorMessage && (
           <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
@@ -964,7 +1068,7 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
                 void startVoiceInput();
               }
             }}
-            disabled={isThinking || isReviewLocked || isTranscribing || voiceSupport !== "supported"}
+            disabled={!isChatStateRestored || isThinking || isReviewLocked || isTranscribing || voiceSupport !== "supported"}
             aria-label={isRecording ? "结束语音输入" : "语音输入"}
             title={
               isRecording
@@ -1005,7 +1109,7 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
               ref={chatInputRef}
               placeholder=""
               value={inputValue}
-              disabled={isReviewLocked || isTranscribing}
+              disabled={!isChatStateRestored || !isAuthReady || isReviewLocked || isTranscribing}
               onChange={(event) => setInputValue(event.target.value)}
               onFocus={requireLogin}
               onKeyDown={(event) => {
@@ -1022,7 +1126,7 @@ export function TaxAiAssistantPage({ expertMode = false }: { expertMode?: boolea
           <Button
             className="h-12 w-12 shrink-0 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90"
             onClick={() => submitQuestion(inputValue)}
-            disabled={isThinking || isReviewLocked || isRecording || isTranscribing}
+            disabled={!isChatStateRestored || isThinking || isReviewLocked || isRecording || isTranscribing}
             aria-label="发送"
           >
             {isThinking ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}

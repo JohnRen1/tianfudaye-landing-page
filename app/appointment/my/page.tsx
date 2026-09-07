@@ -1,4 +1,5 @@
 "use client";
+import { PageLoadingState } from '@/components/mobile/page-loading-state';
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -66,10 +67,16 @@ function AppointmentMyPageContent() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     async function load() {
+      let redirecting = false;
+      setLoading(true);
+      setError(null);
       try {
         const loggedIn = await hydrateClientAuthFromServer();
+        if (!active) return;
         if (!loggedIn) {
+          redirecting = true;
           const loginUrl = new URL("/login", "https://local.invalid");
           loginUrl.searchParams.set("redirectPath", currentPath);
           loginUrl.searchParams.set("returnTo", backPath);
@@ -77,19 +84,20 @@ function AppointmentMyPageContent() {
           return;
         }
         const data = await getMyAppointments();
-        setItems(data);
+        if (active) setItems(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "预约记录加载失败，请稍后重试");
+        if (active) setError(err instanceof Error ? err.message : "预约记录加载失败，请稍后重试");
       } finally {
-        setLoading(false);
+        if (active && !redirecting) setLoading(false);
       }
     }
 
     void load();
+    return () => { active = false; };
   }, [backPath, currentPath, router]);
 
   return (
-    <div className="mx-auto min-h-screen max-w-[390px] bg-background pb-24">
+    <div className="relative mx-auto min-h-screen max-w-[390px] bg-background pb-24">
       <div className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
         <div className="absolute -right-16 top-8 h-36 w-36 rounded-full bg-white/10" />
         <Button
@@ -115,12 +123,8 @@ function AppointmentMyPageContent() {
       <div className="-mt-4 px-4">
         <Card className="border-0 shadow-lg shadow-primary/10">
           <CardContent className="p-4">
-            {loading ? (
-              <div className="flex min-h-[240px] flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                正在加载预约记录...
-              </div>
-            ) : error ? (
+            {loading && <PageLoadingState message="正在加载预约记录…" variant="center" />}
+            {loading && items.length === 0 ? null : error ? (
               <div className="flex min-h-[240px] flex-col items-center justify-center gap-3 text-center">
                 <AlertCircle className="h-8 w-8 text-destructive" />
                 <p className="text-sm text-destructive">{error}</p>

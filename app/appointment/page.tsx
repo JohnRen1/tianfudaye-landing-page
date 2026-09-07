@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import { PageLoadingState } from '@/components/mobile/page-loading-state';
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Building2, CalendarCheck, CheckCircle2, Clock, MessageCircle, MessageSquare, Phone, Send, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -86,10 +87,12 @@ function AppointmentForm() {
   const [form, setForm] = useState<FormState>(initialForm);
   const [errors, setErrors] = useState<ErrorState>({});
   const [submitted, setSubmitted] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
+    setLoadingProfile(true);
     me().then((user) => {
       setForm((prev) => ({
         ...prev,
@@ -100,12 +103,13 @@ function AppointmentForm() {
         contactTime: prev.contactTime || user.size || "",
       }));
     }).catch(() => {
+      setApiError('已有资料暂未读取成功，请核对并手动填写');
       setForm((prev) => ({
         ...prev,
         topic: prev.topic || prefillTopic || "",
         description: prev.description || prefillDescription || "",
       }));
-    });
+    }).finally(() => setLoadingProfile(false));
   }, [prefillDescription, prefillTopic]);
 
   const updateField = (field: keyof FormState, value: string) => {
@@ -130,6 +134,7 @@ function AppointmentForm() {
   };
 
   const handleSubmit = async () => {
+    if (loadingProfile) return;
     if (!validate()) return;
 
     // topic 字段：中文标签 → AppointmentTopic 枚举值
@@ -220,7 +225,8 @@ function AppointmentForm() {
   }
 
   return (
-    <div className="mx-auto min-h-screen max-w-[390px] bg-background pb-44">
+    <div className="relative mx-auto min-h-screen max-w-[390px] bg-background pb-44">
+      {loadingProfile && <PageLoadingState message="正在读取预约资料…" />}
       <div className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
         <div className="absolute -right-16 top-8 h-36 w-36 rounded-full bg-white/10" />
         <Button variant="ghost" size="icon" className="mb-6 rounded-full text-white hover:bg-white/10 hover:text-white" onClick={() => router.replace(backPath)} aria-label="返回">
@@ -376,7 +382,7 @@ function AppointmentForm() {
           <Button
             className="h-12 w-full rounded-xl bg-accent text-base font-semibold text-accent-foreground hover:bg-accent/90 disabled:opacity-60"
             onClick={handleSubmit}
-            disabled={submitting}
+            disabled={loadingProfile || submitting}
           >
             <Send className="mr-2 h-4 w-4" />
             {submitting ? "提交中..." : isEnrollMode ? "提交报名" : "提交预约"}

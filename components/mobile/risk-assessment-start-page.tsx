@@ -55,9 +55,10 @@ export function RiskAssessmentStartPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
 
   useEffect(() => {
-    void hydrateClientAuthFromServer();
+    void hydrateClientAuthFromServer().finally(() => setCheckingAuth(false));
   }, []);
 
   const fallbackBackPath = buildPathWithTracking("/", searchParams);
@@ -71,6 +72,7 @@ export function RiskAssessmentStartPage() {
   };
 
   const startAssessment = () => {
+    if (checkingAuth) return;
     if (!isClientLoggedIn()) {
       setShowLoginModal(true);
       return;
@@ -207,8 +209,9 @@ export function RiskAssessmentStartPage() {
           <Button
             className="h-12 w-full rounded-xl bg-accent text-base font-semibold text-accent-foreground hover:bg-accent/90"
             onClick={startAssessment}
+            disabled={checkingAuth}
           >
-            开始测评
+            {checkingAuth ? '正在读取登录状态…' : '开始测评'}
             <ChevronRight className="ml-1 h-5 w-5" />
           </Button>
         </div>

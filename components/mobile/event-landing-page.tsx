@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { PageLoadingState } from './page-loading-state';
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   FileText,
@@ -69,9 +70,10 @@ export function EventLandingPage({
 }: EventLandingPageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(initialLoggedIn);
+  const [checkingAuth, setCheckingAuth] = useState(!initialLoggedIn);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [downloadedMaterials, setDownloadedMaterials] = useState<string[]>([]);
+  const [downloadedMaterials, setDownloadedMaterials] = useState<string[]>(() => (eventData?.materials ?? []).filter((item) => item.claimStatus === 'claimed').map((item) => item.id));
   const [claimingMaterialId, setClaimingMaterialId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [alreadyCheckedIn, setAlreadyCheckedIn] = useState(!!eventData?.alreadyCheckedIn);
@@ -106,11 +108,13 @@ export function EventLandingPage({
     if (initialLoggedIn) {
       isLoggedInRef.current = true;
       setIsLoggedIn(true);
+      setCheckingAuth(false);
       return;
     }
     void hydrateClientAuthFromServer().then((loggedIn) => {
       isLoggedInRef.current = loggedIn;
       if (loggedIn) setIsLoggedIn(true);
+      setCheckingAuth(false);
     });
   }, [initialLoggedIn]);
 
@@ -132,6 +136,7 @@ export function EventLandingPage({
   };
 
   const requireLogin = (action: () => void) => {
+    if (checkingAuth) return;
     if (isLoggedInRef.current) {
       action();
       return;
@@ -146,6 +151,7 @@ export function EventLandingPage({
   };
 
   const handleMaterialClick = async (material: EventMaterial) => {
+    if (checkingAuth) return;
     if (!isLoggedInRef.current) {
       setPendingAction(() => () => void handleMaterialClick(material));
       setShowLoginModal(true);
@@ -191,7 +197,8 @@ export function EventLandingPage({
   };
 
   return (
-    <div className="min-h-screen bg-background pb-24">
+    <div className="relative min-h-screen bg-background pb-24">
+      {checkingAuth && <PageLoadingState message="正在确认登录状态…" />}
       {isGeneralLanding && (
         <div className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/90 to-primary/80 text-primary-foreground">
           <div className="absolute -right-16 top-8 h-40 w-40 rounded-full bg-amber-400/20 blur-2xl" />
@@ -364,7 +371,7 @@ export function EventLandingPage({
                               !isDownloaded && !needsCompanyInfo &&
                                 "bg-accent text-accent-foreground hover:bg-accent/90"
                             )}
-                            disabled={isClaiming}
+                            disabled={checkingAuth || isClaiming}
                             onClick={() => {
                               if (isDownloaded) {
                                 handleMaterialView(material.id);
@@ -396,7 +403,7 @@ export function EventLandingPage({
                   })}
                 </div>
 
-                {!isLoggedIn && materials.length > 0 && (
+                {!checkingAuth && !isLoggedIn && materials.length > 0 && (
                   <Button
                     className="mt-4 w-full bg-accent text-accent-foreground hover:bg-accent/90"
                     onClick={() => {

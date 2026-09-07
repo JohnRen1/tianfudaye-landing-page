@@ -40,7 +40,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
   }
 
   try {
-    const response = await saveAssessmentReport(id);
+    const response = await saveAssessmentReport(id, userCtx.userId);
     return ok(response);
   } catch (error) {
     return fail('REPORT_SAVE_FAILED', '保存失败', 500, error instanceof Error ? error.message : error);

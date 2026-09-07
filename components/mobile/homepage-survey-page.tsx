@@ -1,4 +1,5 @@
 "use client";
+import { PageLoadingState } from './page-loading-state';
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Building2, Clock, ClipboardList, Loader2, MessageCircle, Send, User, Vote } from "lucide-react";
@@ -43,58 +44,6 @@ const industries = ["制造业", "批发零售", "互联网/科技服务", "建�
 const companySizes = ["10人以下", "10-50人", "51-100人", "101-300人", "300人以上"];
 const contactTimes = ["工作日上午", "工作日下午", "工作日晚上", "周末", "均可"];
 
-const defaultSurveyConfig: HomepageSurveyPublicConfigDTO = {
-  id: "e0000000-0000-0000-0000-000000000001",
-  title: "沙龙主题调研",
-  description: "请选择您最关注的财税沙龙主题，帮助我们安排后续活动内容。",
-  version: 1,
-  hasSubmitted: false,
-  submittedTopicIds: [],
-  topics: [
-    {
-      id: "e1000000-0000-0000-0000-000000000001",
-      title: "金税四期下企业财税合规",
-      description: "围绕发票、资金流水、公转私等高频风险，梳理企业日常合规重点。",
-      sortOrder: 10,
-      voteCount: 0,
-    },
-    {
-      id: "e1000000-0000-0000-0000-000000000002",
-      title: "企业所得税汇算清缴风险排查",
-      description: "聚焦收入确认、成本费用、优惠政策和纳税调整的自查方法。",
-      sortOrder: 20,
-      voteCount: 0,
-    },
-    {
-      id: "e1000000-0000-0000-0000-000000000003",
-      title: "老板个人税务与公私账边界",
-      description: "讲解股东借款、分红、报销、公转私等场景下的风险边界。",
-      sortOrder: 30,
-      voteCount: 0,
-    },
-    {
-      id: "e1000000-0000-0000-0000-000000000004",
-      title: "研发费用加计扣除实务",
-      description: "适合科技型企业了解研发项目归集、资料留存和申报注意事项。",
-      sortOrder: 40,
-      voteCount: 0,
-    },
-    {
-      id: "e1000000-0000-0000-0000-000000000005",
-      title: "企业用工社保与个税合规",
-      description: "覆盖薪酬、劳务、灵活用工、社保基数和个税申报常见问题。",
-      sortOrder: 50,
-      voteCount: 0,
-    },
-    {
-      id: "e1000000-0000-0000-0000-000000000006",
-      title: "高收入企业利润管控与税务筹划",
-      description: "从利润结构、成本合规和政策适配角度，讨论企业增值服务方案。",
-      sortOrder: 60,
-      voteCount: 0,
-    },
-  ],
-};
 
 function readSourceQrId(): string | undefined {
   if (typeof window === "undefined") return undefined;
@@ -109,9 +58,11 @@ export function HomepageSurveyPage() {
   const backPath = requestedBackPath?.startsWith("/") && !requestedBackPath.startsWith("//") && !requestedBackPath.includes("\\")
     ? requestedBackPath
     : buildPathWithTracking("/", searchParams);
-  const [config, setConfig] = useState<HomepageSurveyPublicConfigDTO>(defaultSurveyConfig);
+  const [config, setConfig] = useState<HomepageSurveyPublicConfigDTO | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
-  const [syncing, setSyncing] = useState(false);
+  const [syncing, setSyncing] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -123,8 +74,10 @@ export function HomepageSurveyPage() {
   useEffect(() => {
     let ignored = false;
     setSyncing(true);
+    setLoadError(null);
 
-    void hydrateClientAuthFromServer().then(async (loggedIn) => {
+    const authReady = hydrateClientAuthFromServer();
+    const profileReady = authReady.then(async (loggedIn) => {
       if (loggedIn && !ignored) {
         try {
           const user = await me();
@@ -141,7 +94,7 @@ export function HomepageSurveyPage() {
       }
     });
 
-    getHomepageSurveyActive()
+    profileReady.then(() => getHomepageSurveyActive())
       .then((result) => {
         if (ignored) return;
         setConfig(result);
@@ -149,19 +102,19 @@ export function HomepageSurveyPage() {
       })
       .catch((error) => {
         if (!ignored) {
-          console.warn("[homepage-survey] sync active survey failed", error);
+          setLoadError(error instanceof Error ? error.message : '问卷加载失败，请重试');
         }
       })
       .finally(() => {
         if (!ignored) setSyncing(false);
       });
     return () => { ignored = true; };
-  }, []);
+  }, [reloadKey]);
 
   const update = (key: keyof FormState, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
 
   const handleSubmit = async () => {
-    if (!config) return;
+    if (!config || syncing || loadError) return;
     if (!form.name.trim()) return setMessage("请填写姓名");
     if (!/^1[3-9]\d{9}$/.test(form.phone.trim())) return setMessage("请填写正确的 11 位手机号");
     if (!form.company.trim()) return setMessage("请填写公司名称");
@@ -192,7 +145,7 @@ export function HomepageSurveyPage() {
         setForm((prev) => ({ ...prev, topicId: latest.submittedTopicIds[0] ?? prev.topicId }));
       } catch (error) {
         console.warn("[homepage-survey] sync active survey after submit failed", error);
-        setConfig((current) => ({ ...current, hasSubmitted: true, submittedTopicIds: [form.topicId] }));
+        setConfig((current) => current ? ({ ...current, hasSubmitted: true, submittedTopicIds: [form.topicId] }) : current);
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "提交失败，请稍后重试");
@@ -204,7 +157,7 @@ export function HomepageSurveyPage() {
   const submitted = Boolean(config?.hasSubmitted);
 
   return (
-    <main className="mx-auto min-h-screen max-w-[390px] bg-background pb-8">
+    <main className="relative mx-auto min-h-screen max-w-[390px] bg-background pb-8">
       <section className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
           <div className="absolute -right-16 top-8 h-36 w-36 rounded-full bg-white/10" />
           <Button variant="ghost" size="icon" className="relative mb-6 rounded-full text-white hover:bg-white/10 hover:text-white" onClick={() => router.replace(backPath)} aria-label="返回">
@@ -222,7 +175,8 @@ export function HomepageSurveyPage() {
       </section>
 
       <section className="-mt-4 space-y-4 px-4">
-          {syncing ? <div className="flex items-center justify-center rounded-2xl bg-card/80 px-4 py-2 text-xs text-muted-foreground shadow-sm"><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />正在同步最新课题</div> : null}
+          {syncing && <PageLoadingState message="正在读取问卷…" variant="center" />}
+          {loadError && <div role="alert" className="space-y-3 rounded-2xl bg-card p-4 text-sm"><p>{loadError}</p><Button variant="outline" onClick={() => setReloadKey((key) => key + 1)}>重新加载</Button></div>}
           {config ? (
             <>
               <div className="rounded-3xl border-0 bg-card p-5 shadow-lg shadow-primary/10">
@@ -315,10 +269,10 @@ export function HomepageSurveyPage() {
           ) : null}
 
           {message ? <div className="rounded-2xl bg-muted p-3 text-sm text-muted-foreground">{message}</div> : null}
-          <Button className="h-12 w-full rounded-xl bg-accent text-base font-semibold text-accent-foreground hover:bg-accent/90 disabled:opacity-60" disabled={submitting || submitted || !config} onClick={() => void handleSubmit()}>
+          <Button className="h-12 w-full rounded-xl bg-accent text-base font-semibold text-accent-foreground hover:bg-accent/90 disabled:opacity-60" disabled={syncing || Boolean(loadError) || submitting || submitted || !config} onClick={() => void handleSubmit()}>
             {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             {!submitting && !submitted ? <Send className="mr-2 h-4 w-4" /> : null}
-            {submitted ? "本轮已提交" : "提交投票"}
+            {syncing ? '正在读取问卷…' : loadError ? '问卷暂不可用' : submitted ? "本轮已提交" : "提交投票"}
           </Button>
           <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
             <Clock className="h-3.5 w-3.5" />我们会根据投票结果安排后续沙龙

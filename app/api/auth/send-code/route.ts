@@ -13,21 +13,26 @@ function maskPhone(phone: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  const requestId = crypto.randomUUID();
+  const clientPlatform = req.headers.get('x-client-platform') ?? 'unknown';
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return fail('INVALID_REQUEST_BODY', '请求体格式错误', 400);
+    console.warn('[api/auth/send-code] invalid request body', { requestId, clientPlatform });
+    return fail('INVALID_REQUEST_BODY', '请求体格式错误', 400, undefined, requestId);
   }
 
   const { phone, purpose } = body as Record<string, unknown>;
+  const maskedPhone = typeof phone === 'string' ? maskPhone(phone) : null;
+  console.info('[api/auth/send-code] request', { requestId, clientPlatform, phone: maskedPhone, purpose });
 
   if (typeof phone !== 'string' || !PHONE_REGEX.test(phone)) {
-    return fail('INVALID_PHONE', '手机号格式不正确', 400);
+    return fail('INVALID_PHONE', '手机号格式不正确', 400, undefined, requestId);
   }
 
   if (purpose !== 'login') {
-    return fail('INVALID_PURPOSE', '验证码用途不合法', 400);
+    return fail('INVALID_PURPOSE', '验证码用途不合法', 400, undefined, requestId);
   }
 
   try {
@@ -36,6 +41,7 @@ export async function POST(req: NextRequest) {
     const runtimeInfo = getSmsRuntimeInfo();
 
     console.info('[auth/send-code] code prepared', {
+      requestId,
       phone: maskPhone(phone),
       provider,
       hasJuheApiKey: runtimeInfo.hasJuheApiKey,
@@ -58,12 +64,15 @@ export async function POST(req: NextRequest) {
     };
 
     if (provider === 'dev') {
+      console.info('[api/auth/send-code] success', { requestId, provider, hasDevCode: Boolean(result._devCode) });
       return ok({ ...response, _devCode: result._devCode });
     }
 
+    console.info('[api/auth/send-code] success', { requestId, provider, hasDevCode: false });
     return ok(response);
   } catch (error) {
     console.error('[auth/send-code] failed', {
+      requestId,
       phone: typeof phone === 'string' ? maskPhone(phone) : null,
       provider: getSmsProvider(),
       message: error instanceof Error ? error.message : String(error),
@@ -71,12 +80,12 @@ export async function POST(req: NextRequest) {
 
     if (error instanceof Error) {
       if (error.message === 'CODE_SEND_TOO_FREQUENT') {
-        return fail('CODE_SEND_TOO_FREQUENT', '发送太频繁，请 60 秒后再试', 429);
+        return fail('CODE_SEND_TOO_FREQUENT', '发送太频繁，请 60 秒后再试', 429, undefined, requestId);
       }
       if (error.message === 'CODE_DAILY_LIMIT_EXCEEDED') {
-        return fail('CODE_DAILY_LIMIT_EXCEEDED', '今日验证码发送次数已达上限', 429);
+        return fail('CODE_DAILY_LIMIT_EXCEEDED', '今日验证码发送次数已达上限', 429, undefined, requestId);
       }
     }
-    return fail('SEND_CODE_FAILED', '验证码发送失败', 500, error instanceof Error ? error.message : error);
+    return fail('SEND_CODE_FAILED', '验证码发送失败', 500, error instanceof Error ? error.message : error, requestId);
   }
 }

@@ -1,4 +1,5 @@
 "use client";
+import { InitialDataFrame, PageLoadingState } from '@/components/mobile/page-loading-state';
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -11,10 +12,8 @@ import {
   FileLock2,
   FileText,
   Loader2,
-  LockKeyhole,
   Radar,
   RefreshCcw,
-  ShieldAlert,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -111,6 +110,9 @@ function RiskReportContent() {
   const appointmentUrl = new URL(buildPathWithTracking("/appointment", searchParams), "https://local.invalid");
   appointmentUrl.searchParams.set("returnTo", currentPath);
   const appointmentBasePath = `${appointmentUrl.pathname}${appointmentUrl.search}`;
+  const myReportsUrl = new URL(buildPathWithTracking("/risk-assessment/my", searchParams), "https://local.invalid");
+  myReportsUrl.searchParams.set("returnTo", currentPath);
+  const myReportsPath = `${myReportsUrl.pathname}${myReportsUrl.search}`;
   const retryStartUrl = new URL(buildPathWithTracking("/risk-assessment", searchParams), "https://local.invalid");
   retryStartUrl.searchParams.set("returnTo", reportBackPath);
   const retryQuizUrl = new URL(buildPathWithTracking("/risk-assessment/quiz", searchParams), "https://local.invalid");
@@ -129,6 +131,7 @@ function RiskReportContent() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
 
   // -------------------------------------------------------------------------
   // Load report
@@ -154,11 +157,9 @@ function RiskReportContent() {
   useEffect(() => {
     void hydrateClientAuthFromServer().then((loggedIn) => {
       if (loggedIn) setIsLoggedIn(true);
+      setCheckingAuth(false);
+      void fetchReport();
     });
-  }, []);
-
-  useEffect(() => {
-    fetchReport();
   }, [fetchReport]);
 
   // -------------------------------------------------------------------------
@@ -227,13 +228,8 @@ function RiskReportContent() {
   // -------------------------------------------------------------------------
   // Loading / error states
   // -------------------------------------------------------------------------
-  if (loadingReport) {
-    return (
-      <div className="mx-auto flex min-h-screen max-w-[390px] flex-col items-center justify-center gap-4 bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">正在加载风险报告…</p>
-      </div>
-    );
+  if ((loadingReport || checkingAuth) && !report) {
+    return <InitialDataFrame title="风险测评报告" description="查看风险分析与处理建议" action="查看报告" onBack={() => router.back()} />;
   }
 
   if (loadError || !report) {
@@ -288,7 +284,8 @@ function RiskReportContent() {
   // Render
   // -------------------------------------------------------------------------
   return (
-    <div className="mx-auto min-h-screen max-w-[390px] bg-background pb-28">
+    <div className="relative mx-auto min-h-screen max-w-[390px] bg-background pb-28">
+      {(loadingReport || checkingAuth) && <PageLoadingState message="正在更新报告…" />}
       {/* Header */}
       <div className="mobile-safe-hero relative overflow-hidden bg-gradient-to-br from-primary via-primary/95 to-primary/80 px-4 pb-8 pt-4 text-primary-foreground">
         <div className="absolute -right-16 top-10 h-40 w-40 rounded-full border border-white/15" />
@@ -377,15 +374,6 @@ function RiskReportContent() {
               </div>
             )}
 
-            {highRisk && (
-              <Button
-                className="mt-4 h-11 w-full rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                onClick={() => router.push(appointmentPath)}
-              >
-                <CalendarCheck className="mr-2 h-4 w-4" />
-                预约顾问解读
-              </Button>
-            )}
           </CardContent>
         </Card>
 
@@ -475,7 +463,7 @@ function RiskReportContent() {
                 <div>
                   <h2 className="font-semibold text-foreground">解锁完整报告</h2>
                   <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                    解锁完整报告，查看详细风险说明和整改建议。
+                    登录后可查看详细风险说明和整改建议，使用底部操作即可继续。
                   </p>
                 </div>
               </div>
@@ -487,23 +475,11 @@ function RiskReportContent() {
                 </div>
               )}
 
-              <Button
-                className="h-11 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
-                disabled={unlocking}
-                onClick={handleUnlock}
-              >
-                {unlocking ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <LockKeyhole className="mr-2 h-4 w-4" />
-                )}
-                {unlocking ? "解锁中…" : isLoggedIn ? "查看完整报告" : "手机号登录查看完整报告"}
-              </Button>
             </CardContent>
           </Card>
         )}
 
-        {/* Save & appointment */}
+        {/* Save or open saved reports */}
         <Card className="border-0 shadow-sm">
           <CardContent className="space-y-3 p-4">
             {saveError && (
@@ -516,23 +492,15 @@ function RiskReportContent() {
             <Button
               variant="outline"
               className="h-11 w-full rounded-xl"
-              disabled={isSaved || saving}
-              onClick={handleSave}
+              disabled={loadingReport || checkingAuth || saving}
+              onClick={isSaved ? () => router.push(myReportsPath) : handleSave}
             >
               {saving ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <BookmarkCheck className="mr-2 h-4 w-4" />
               )}
-              {isSaved ? "已保存到我的报告" : saving ? "保存中…" : "保存到我的报告"}
-            </Button>
-
-            <Button
-              className="h-11 w-full rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => router.push(appointmentPath)}
-            >
-              <CalendarCheck className="mr-2 h-4 w-4" />
-              预约顾问解读
+              {isSaved ? "查看我的报告" : saving ? "保存中…" : "保存到我的报告"}
             </Button>
           </CardContent>
         </Card>
@@ -549,7 +517,7 @@ function RiskReportContent() {
           <Button
             variant="outline"
             className="h-12 flex-1 rounded-xl"
-            disabled={unlocking}
+            disabled={loadingReport || checkingAuth || unlocking}
             onClick={handleFullReportClick}
           >
             {isUnlocked ? (
@@ -557,15 +525,15 @@ function RiskReportContent() {
             ) : (
               <FileText className="mr-2 h-4 w-4" />
             )}
-            {isUnlocked ? "已解锁报告" : "完整报告"}
+            {unlocking ? "加载中…" : isUnlocked ? "查看整改建议" : "查看完整报告"}
           </Button>
 
           <Button
             className="h-12 flex-1 rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
             onClick={() => router.push(appointmentPath)}
           >
-            <ShieldAlert className="mr-2 h-4 w-4" />
-            顾问解读
+            <CalendarCheck className="mr-2 h-4 w-4" />
+            预约顾问解读
           </Button>
         </div>
       </div>
@@ -583,10 +551,7 @@ export default function Page() {
   return (
     <Suspense
       fallback={
-        <div className="mx-auto flex min-h-screen max-w-[390px] flex-col items-center justify-center gap-4 bg-background">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">正在加载风险报告…</p>
-        </div>
+        <InitialDataFrame title="风险测评报告" description="查看风险分析与处理建议" action="查看报告" />
       }
     >
       <RiskReportContent />

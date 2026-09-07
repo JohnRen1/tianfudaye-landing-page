@@ -12,6 +12,7 @@ describe('landing route authentication policy', () => {
     '/risk-assessment',
     '/risk-assessment/quiz',
     '/risk-assessment/report',
+    '/risk-assessment/my',
     '/materials',
     '/materials/view',
     '/appointment',
