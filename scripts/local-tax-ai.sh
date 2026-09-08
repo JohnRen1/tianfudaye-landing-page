@@ -32,7 +32,6 @@ if [[ "${LANDING_HTTPS}" == "1" || "${LANDING_HTTPS}" == "true" ]]; then
   LANDING_SCHEME="https"
 fi
 LANDING_URL="${LANDING_SCHEME}://127.0.0.1:${LANDING_PORT}"
-LAN_IP="${TAX_LAN_IP:-$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)}"
 
 say() {
   printf '[税务AI本地环境] %s\n' "$1"
@@ -326,9 +325,11 @@ start_all() {
   printf '\n'
   say "全部启动完成"
   printf '  问答页面：%s/tax-ai\n' "${LANDING_URL}"
-  if [[ -n "${LAN_IP}" ]]; then
-    printf '  手机访问：%s://%s:%s/tax-ai\n' "${LANDING_SCHEME}" "${LAN_IP}" "${LANDING_PORT}"
-  fi
+  local lan_address
+  while IFS= read -r lan_address; do
+    [[ -n "${lan_address}" ]] || continue
+    printf '  手机访问：%s://%s:%s/tax-ai\n' "${LANDING_SCHEME}" "${lan_address}" "${LANDING_PORT}"
+  done < <(node "${SCRIPT_DIR}/lan-addresses.mjs")
   printf '  Agent文档：%s/docs\n' "${AGENT_URL}"
   printf '  RAG健康：%s/health\n' "${RAG_URL}"
   printf '  查看状态：pnpm run tax-ai:status\n'
@@ -439,7 +440,7 @@ show_help() {
   TAX_AGENT_SKIP_BUILD=1                               # 已有镜像时跳过构建
 
 局域网测试：
-  TAX_LAN_IP=192.168.0.133       # 二维码生成时使用的电脑局域网 IP
+  # 启动时自动识别局域网 IPv4，无需设置 TAX_LAN_IP；多个网卡会列出多个地址。
   TAX_LANDING_BIND_HOST=0.0.0.0 # 默认允许同一局域网设备访问
   TAX_LANDING_HTTPS=1            # 启用 Next.js 自签名 HTTPS，浏览器本地验证麦克风
   TAX_LANDING_HTTPS_KEY=/path/to/dev-key.pem
