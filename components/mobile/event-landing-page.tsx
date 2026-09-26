@@ -26,6 +26,7 @@ import { buildPathWithTracking } from "@/lib/tracking-context";
 import { LoginModal } from "./login-modal";
 import { hydrateClientAuthFromServer } from "@/lib/client-auth";
 import { claimMaterial } from "@/lib/api/materials";
+import { getMiniProgramFeatureConfig } from "@/lib/api/features";
 import type { MaterialClaimStatus } from "@/lib/contracts/material";
 import type { LandingActivityType } from "@/lib/contracts/tracking";
 import { ACTIVITY_LANDING_DEFAULTS, displayActivityField, getActivityCoverPresentation } from "@/lib/activity-presentation";
@@ -77,6 +78,7 @@ export function EventLandingPage({
   const [claimingMaterialId, setClaimingMaterialId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [alreadyCheckedIn, setAlreadyCheckedIn] = useState(!!eventData?.alreadyCheckedIn);
+  const [aiChatEnabled, setAiChatEnabled] = useState(true);
   const isLoggedInRef = useRef(false);
   const materials = eventData?.materials ?? [];
   const coverPresentation = getActivityCoverPresentation(eventData?.type);
@@ -99,6 +101,18 @@ export function EventLandingPage({
       setAlreadyCheckedIn(true);
     }
   }, [eventData?.alreadyCheckedIn]);
+
+  useEffect(() => {
+    let active = true;
+    void getMiniProgramFeatureConfig()
+      .then((config) => {
+        if (active) setAiChatEnabled(config.aiChatEnabled);
+      })
+      .catch((error) => console.warn("[landing-features] config unavailable, keep current state", error));
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     setDownloadedMaterials((eventData?.materials ?? []).filter((material) => material.claimStatus === "claimed").map((material) => material.id));
@@ -426,24 +440,28 @@ export function EventLandingPage({
           专属服务
         </h2>
         <div className="grid grid-cols-1 gap-3">
-          {/* AI 税务助手 */}
-          <Card
-            className="cursor-pointer border-0 shadow-sm transition-all hover:shadow-md"
-            onClick={() => requireLogin(() => router.push(withReturnToLanding("/tax-ai")))}
-          >
-            <CardContent className="flex items-center gap-4 p-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80">
-                <Sparkles className="h-6 w-6 text-primary-foreground" />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-semibold text-foreground">AI 税务助手</h3>
-                <p className="text-sm text-muted-foreground">
-                  有税务问题？立即问 AI
-                </p>
-              </div>
-              <ChevronRight className="h-5 w-5 text-muted-foreground" />
-            </CardContent>
-          </Card>
+          {aiChatEnabled && (
+            <Card
+              className="cursor-pointer border-0 shadow-sm transition-all hover:shadow-md"
+              onClick={() => requireLogin(() => router.push(withReturnToLanding("/tax-ai")))}
+            >
+              <CardContent className="flex items-center gap-4 p-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80">
+                  <Sparkles className="h-6 w-6 text-primary-foreground" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-foreground">AI 税务助手</h3>
+                    <Badge variant="secondary" className="rounded-full px-2 py-0.5 text-[10px] text-primary">AI生成</Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    有税务问题？立即问 AI
+                  </p>
+                </div>
+                <ChevronRight className="h-5 w-5 text-muted-foreground" />
+              </CardContent>
+            </Card>
+          )}
 
           {/* 财税风险测评 */}
           <Card

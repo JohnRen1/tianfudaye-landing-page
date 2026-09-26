@@ -19,6 +19,7 @@ function resolveVoiceFormat(audio: File): string {
   }
 
   if (fromMime.includes('wav')) return 'wav';
+  if (fromMime === 'audio/mpeg' || fromMime === 'audio/mp3') return 'mp3';
   if (fromMime.includes('mp3')) return 'mp3';
   if (fromMime.includes('aac')) return 'aac';
   if (fromMime.includes('amr')) return 'amr';
