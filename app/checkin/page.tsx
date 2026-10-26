@@ -93,17 +93,10 @@ function CheckinContent() {
       const result = await submitCheckin(pageData.checkinQrId);
       setCheckinCount(result.checkinCount);
       setSuccess(true);
-      // 签到成功后跳回活动落地页（携带 checkedIn=1 标记）
-      const redirectUrl = new URL(landingReturnPath, window.location.origin);
-      redirectUrl.searchParams.set("checkedIn", "1");
-      router.replace(redirectUrl.pathname + redirectUrl.search);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === "CHECKIN_ALREADY_DONE") {
           setSuccess(true);
-          const redirectUrl = new URL(landingReturnPath, window.location.origin);
-          redirectUrl.searchParams.set("checkedIn", "1");
-          router.replace(redirectUrl.pathname + redirectUrl.search);
           return;
         }
         setSubmitError(err.message);
@@ -191,15 +184,15 @@ function CheckinContent() {
               <div className="space-y-2 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <CalendarDays className="h-4 w-4 shrink-0 text-primary" />
-                  <span>{pageData.activityDate}</span>
+                  <span>{pageData.activityDate || "待公布"}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4 shrink-0 text-primary" />
-                  <span>{pageData.activityTime}</span>
+                  <span>{pageData.activityTime || "待公布"}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <MapPin className="h-4 w-4 shrink-0 text-primary" />
-                  <span>{pageData.activityLocation}</span>
+                  <span>{pageData.activityLocation || "待公布"}</span>
                 </div>
               </div>
               <div className="flex items-center gap-2 rounded-2xl bg-success/10 px-4 py-3">
@@ -270,15 +263,15 @@ function CheckinContent() {
             <div className="space-y-2 text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
                 <CalendarDays className="h-4 w-4 shrink-0 text-primary" />
-                <span>{pageData.activityDate}</span>
+                <span>{pageData.activityDate || "待公布"}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Clock className="h-4 w-4 shrink-0 text-primary" />
-                <span>{pageData.activityTime}</span>
+                <span>{pageData.activityTime || "待公布"}</span>
               </div>
               <div className="flex items-center gap-2">
                 <MapPin className="h-4 w-4 shrink-0 text-primary" />
-                <span>{pageData.activityLocation}</span>
+                <span>{pageData.activityLocation || "待公布"}</span>
               </div>
             </div>
             <div className="flex items-center gap-2 rounded-2xl bg-secondary/60 px-4 py-2.5">
@@ -306,14 +299,8 @@ function CheckinContent() {
                 <p className="font-semibold text-foreground">
                   {CHECKIN_WINDOW_STATUS_LABEL[pageData.windowStatus]}
                 </p>
-                {pageData.windowStatus === "not_started" && pageData.windowOpenAt && (
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    签到开放时间：{new Date(pageData.windowOpenAt).toLocaleString("zh-CN", {
-                      month: "long", day: "numeric",
-                      hour: "2-digit", minute: "2-digit",
-                      timeZone: "Asia/Shanghai",
-                    })}
-                  </p>
+                {pageData.windowStatus === "not_started" && (
+                  <p className="mt-1 text-sm text-muted-foreground">请在活动签到时间内再次进入</p>
                 )}
                 {pageData.windowStatus === "ended" && (
                   <p className="mt-1 text-sm text-muted-foreground">本场活动签到已关闭</p>
@@ -361,7 +348,7 @@ function CheckinContent() {
           </Button>
           {isWindowOpen && !isLoggedIn && (
             <p className="mt-2 text-center text-xs text-muted-foreground">
-              需要手机号登录后完成签到
+              需要登录后完成签到
             </p>
           )}
         </div>

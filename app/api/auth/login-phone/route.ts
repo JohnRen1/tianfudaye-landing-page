@@ -42,15 +42,32 @@ export async function POST(req: NextRequest) {
   }
 
   failureStage = 'verify_code';
-  const isValid = await verifyAndConsumeDevCode(phone, code);
+  let isValid = false;
+  try {
+    isValid = await verifyAndConsumeDevCode(phone, code);
+  } catch (error) {
+    console.error('[api/auth/login-phone] verification lookup failed', {
+      requestId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return fail('CODE_LOOKUP_FAILED', '验证码服务暂不可用，请稍后重试', 503, undefined, requestId);
+  }
   console.info('[api/auth/login-phone] verification result', { requestId, valid: isValid });
   if (!isValid) return fail('AUTH_INVALID_CODE', '验证码错误或已过期', 401, undefined, requestId);
 
   try {
     failureStage = 'exchange_mini_program_code';
-    const miniProgramOpenId = typeof miniProgramCode === 'string' && miniProgramCode.length > 0
-      ? await exchangeMiniProgramCodeForOpenId(miniProgramCode)
-      : undefined;
+    let miniProgramOpenId: string | undefined;
+    if (typeof miniProgramCode === 'string' && miniProgramCode.length > 0) {
+      try {
+        miniProgramOpenId = await exchangeMiniProgramCodeForOpenId(miniProgramCode);
+      } catch (error) {
+        console.error('[api/auth/login-phone] mini program code exchange failed', {
+          requestId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     console.info('[api/auth/login-phone] mini program code exchange', { requestId, exchanged: Boolean(miniProgramOpenId) });
     failureStage = 'login_or_create_user';
     const result = await loginOrCreateUserByPhone({
@@ -61,7 +78,14 @@ export async function POST(req: NextRequest) {
     console.info('[api/auth/login-phone] user resolved', { requestId, isNew: result.isNew });
     failureStage = 'bind_openid';
     if (miniProgramOpenId) {
-      await bindWechatOpenIdToUser(result.user.id, miniProgramOpenId);
+      try {
+        await bindWechatOpenIdToUser(result.user.id, miniProgramOpenId);
+      } catch (error) {
+        console.error('[api/auth/login-phone] bind openid failed', {
+          requestId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
     console.info('[api/auth/login-phone] success', { requestId, userId: result.user.id, isNew: result.isNew });
     const accessToken = buildUserAuthToken(result.user.id);

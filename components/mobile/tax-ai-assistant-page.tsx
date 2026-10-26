@@ -36,6 +36,28 @@ import {
   EXPERT_SESSION_STORAGE_KEY,
 } from "./tax-ai-chat-state";
 
+type ChatReadingSize = "standard" | "large";
+const CHAT_READING_STORAGE_KEY = "tax-landing-chat-reading-v1";
+const readingTypography: Record<ChatReadingSize, { body: string; heading: string; table: string; bubble: string }> = {
+  standard: {
+    body: "text-base leading-relaxed",
+    heading: "text-lg font-semibold",
+    table: "text-sm",
+    bubble: "text-base leading-relaxed",
+  },
+  large: {
+    body: "text-lg leading-relaxed",
+    heading: "text-xl font-semibold",
+    table: "text-base",
+    bubble: "text-lg leading-relaxed",
+  },
+};
+
+function readStoredReadingSize(): ChatReadingSize {
+  if (typeof window === "undefined") return "standard";
+  return window.localStorage.getItem(CHAT_READING_STORAGE_KEY) === "large" ? "large" : "standard";
+}
+
 const quickQuestions = [
   "员工退休，公司需要怎么处理？",
   "我们能享受哪些税收优惠？",
@@ -203,17 +225,18 @@ function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   return new Blob([view], { type: "audio/wav" });
 }
 
-function MarkdownAnswer({ content }: { content: string }) {
+function MarkdownAnswer({ content, readingSize = "standard" }: { content: string; readingSize?: ChatReadingSize }) {
+  const type = readingTypography[readingSize];
   const normalizedContent = normalizeMarkdownForRender(content);
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        h1: ({ children }) => <h3 className="pt-1 text-base font-semibold text-foreground">{children}</h3>,
-        h2: ({ children }) => <h3 className="pt-1 text-base font-semibold text-foreground">{children}</h3>,
-        h3: ({ children }) => <h4 className="pt-1 text-sm font-semibold text-foreground">{children}</h4>,
-        h4: ({ children }) => <h4 className="pt-1 text-sm font-semibold text-foreground">{children}</h4>,
-        p: ({ children }) => <p className="leading-relaxed text-muted-foreground">{children}</p>,
+        h1: ({ children }) => <h3 className={`pt-1 text-foreground ${type.heading}`}>{children}</h3>,
+        h2: ({ children }) => <h3 className={`pt-1 text-foreground ${type.heading}`}>{children}</h3>,
+        h3: ({ children }) => <h4 className={`pt-1 text-foreground ${type.heading}`}>{children}</h4>,
+        h4: ({ children }) => <h4 className={`pt-1 text-foreground ${type.heading}`}>{children}</h4>,
+        p: ({ children }) => <p className={`${type.body} text-muted-foreground`}>{children}</p>,
         strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
         ul: ({ children }) => <ul className="list-disc space-y-1 pl-5 text-muted-foreground">{children}</ul>,
         ol: ({ children }) => <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">{children}</ol>,
@@ -227,7 +250,7 @@ function MarkdownAnswer({ content }: { content: string }) {
             className="my-2 min-w-0 max-w-full touch-pan-x overflow-x-auto overscroll-x-contain rounded-md border border-border"
             style={{ WebkitOverflowScrolling: "touch" }}
           >
-            <table className="w-max min-w-[560px] max-w-none border-collapse text-left text-xs">
+            <table className={`w-max min-w-[560px] max-w-none border-collapse text-left ${type.table}`}>
               {children}
             </table>
           </div>
@@ -351,6 +374,7 @@ function AiAnswerCard({
   sessionId,
   qaRecordId,
   onReviewStarted,
+  readingSize = "standard",
 }: {
   answer: AiAnswerBodyDTO;
   onSupportClick: (qaRecordId: string | null) => void;
@@ -359,6 +383,7 @@ function AiAnswerCard({
   sessionId: string | null;
   qaRecordId: string | null;
   onReviewStarted?: () => void;
+  readingSize?: ChatReadingSize;
 }) {
   const [reviewKind, setReviewKind] = useState<"incorrect" | "needs_revision" | null>(null);
   const [expertComment, setExpertComment] = useState("");
@@ -373,9 +398,10 @@ function AiAnswerCard({
   const evidenceCitations = answer.citations ? mergeCitationsBySource(answer.citations) : [];
 
   return (
-    <div className="min-w-0 max-w-full space-y-3 overflow-hidden rounded-2xl rounded-tl-sm bg-card px-4 py-3 text-sm shadow-sm">
+    <div className={`min-w-0 max-w-full space-y-3 overflow-hidden rounded-2xl rounded-tl-sm bg-card px-4 py-3 shadow-sm ${readingTypography[readingSize].body}`}>
+      <p className="text-[10px] font-medium text-primary">AI生成内容</p>
       <div className="min-w-0 max-w-full space-y-3 break-words">
-        <MarkdownAnswer content={answer.answerText || answer.initialJudgment} />
+        <MarkdownAnswer content={answer.answerText || answer.initialJudgment} readingSize={readingSize} />
       </div>
       {expertMode && evidenceCitations.length > 0 && (
         <details className="rounded-xl border border-border bg-muted/30 p-3 text-xs">
@@ -559,6 +585,7 @@ function TaxAiConversation({ expertMode = false }: { expertMode?: boolean }) {
   const activityId = searchParams.get("activity_id") ?? searchParams.get("activity");
   const requestedSession = expertMode ? null : searchParams.get("session");
   const [restoreAttempt, setRestoreAttempt] = useState(0);
+  const [readingSize, setReadingSize] = useState<ChatReadingSize>("standard");
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(expertMode);
@@ -575,6 +602,10 @@ function TaxAiConversation({ expertMode = false }: { expertMode?: boolean }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [voiceSupport, setVoiceSupport] = useState<VoiceSupport>("checking");
+
+  useEffect(() => {
+    setReadingSize(readStoredReadingSize());
+  }, []);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -966,13 +997,45 @@ function TaxAiConversation({ expertMode = false }: { expertMode?: boolean }) {
               <Sparkles className="h-7 w-7" />
             </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-2xl font-bold tracking-tight">{expertMode ? "专家问答" : "AI 客服助手"}</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold tracking-tight">{expertMode ? "专家问答" : "AI 客服助手"}</h1>
+                <span className="shrink-0 rounded-full bg-white/15 px-2 py-0.5 text-[10px] text-white">AI生成内容</span>
+              </div>
             </div>
           </div>
 
           <p className="mt-4 max-w-[300px] text-sm leading-relaxed text-white/80">
-            {expertMode ? "用于审阅法规问答，发现错误后直接修正" : "可以直接提问，也可以接着上一轮自然交流"}
+            {expertMode ? "审阅法规问答，发现错误后直接修正" : "可以直接提问，也可以接着上一轮自然交流"}
           </p>
+          <div className="mt-4 flex items-center gap-2" role="group" aria-label="字号">
+            <span className="text-xs text-white/80">字号</span>
+            <Button
+              type="button"
+              variant="ghost"
+              className={`h-8 rounded-lg px-3 text-xs ${readingSize === "standard" ? "bg-white text-primary hover:bg-white" : "bg-white/10 text-white hover:bg-white/20 hover:text-white"}`}
+              aria-pressed={readingSize === "standard"}
+              aria-label="标准字号"
+              onClick={() => {
+                setReadingSize("standard");
+                window.localStorage.setItem(CHAT_READING_STORAGE_KEY, "standard");
+              }}
+            >
+              标准
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className={`h-8 rounded-lg px-3 text-xs ${readingSize === "large" ? "bg-white text-primary hover:bg-white" : "bg-white/10 text-white hover:bg-white/20 hover:text-white"}`}
+              aria-pressed={readingSize === "large"}
+              aria-label="大字字号"
+              onClick={() => {
+                setReadingSize("large");
+                window.localStorage.setItem(CHAT_READING_STORAGE_KEY, "large");
+              }}
+            >
+              大字
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -1010,7 +1073,7 @@ function TaxAiConversation({ expertMode = false }: { expertMode?: boolean }) {
           {messages.map((message) =>
             message.role === "user" ? (
               <div key={message.id} className="flex min-w-0 justify-end gap-2">
-                <div className="min-w-0 max-w-[78%] break-words rounded-2xl rounded-tr-sm bg-primary px-4 py-3 text-sm leading-relaxed text-primary-foreground shadow-sm">
+                <div className={`min-w-0 max-w-[78%] break-words rounded-2xl rounded-tr-sm bg-primary px-4 py-3 text-primary-foreground shadow-sm ${readingTypography[readingSize].bubble}`}>
                   {message.content}
                 </div>
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
@@ -1036,6 +1099,7 @@ function TaxAiConversation({ expertMode = false }: { expertMode?: boolean }) {
                       sessionId={sessionId}
                       qaRecordId={message.qaRecordId}
                       onReviewStarted={expertMode ? () => setIsReviewLocked(true) : undefined}
+                      readingSize={readingSize}
                     />
                   ) : (
                     <AiLoadingCard />
@@ -1057,6 +1121,10 @@ function TaxAiConversation({ expertMode = false }: { expertMode?: boolean }) {
       </main>
 
       <div className="fixed bottom-0 left-1/2 right-auto w-full max-w-[390px] -translate-x-1/2 border-t border-border bg-card/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-lg backdrop-blur">
+        <p className="mx-auto mb-2 flex max-w-[390px] items-start gap-1.5 text-xs leading-relaxed text-muted-foreground">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          AI生成内容可能存在偏差，请核对重要信息
+        </p>
         <div className="mx-auto flex max-w-[390px] items-end gap-2">
           <Button
             variant={isRecording ? "destructive" : "outline"}

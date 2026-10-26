@@ -85,6 +85,9 @@ export async function POST(req: NextRequest) {
       if (error.message === 'CODE_DAILY_LIMIT_EXCEEDED') {
         return fail('CODE_DAILY_LIMIT_EXCEEDED', '今日验证码发送次数已达上限', 429, undefined, requestId);
       }
+      if (error.message === 'CODE_STORE_FAILED') {
+        return fail('CODE_STORE_FAILED', '验证码服务暂不可用，请稍后重试', 503, undefined, requestId);
+      }
     }
     return fail('SEND_CODE_FAILED', '验证码发送失败', 500, error instanceof Error ? error.message : error, requestId);
   }

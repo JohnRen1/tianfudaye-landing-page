@@ -138,7 +138,7 @@ export function HomepageSurveyPage() {
         note: form.note.trim() || undefined,
         sourceQrId: readSourceQrId(),
       });
-      setMessage("提交成功，我们会根据大家关注的主题安排后续沙龙内容。");
+      setMessage("提交成功，我们会根据投票结果安排后续沙龙内容。");
       try {
         const latest = await getHomepageSurveyActive();
         setConfig(latest);

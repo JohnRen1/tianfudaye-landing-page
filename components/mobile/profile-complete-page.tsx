@@ -71,6 +71,8 @@ export function ProfileCompletePage() {
           setIndustry(savedIndustry);
         }
         setContactTime(user.size ?? "");
+        const identity = user.identity ?? "";
+        setWechat(identity.startsWith("微信号：") ? identity.slice("微信号：".length) : "");
       } catch {
         setError("用户信息加载失败，请重新登录后再试");
       } finally {

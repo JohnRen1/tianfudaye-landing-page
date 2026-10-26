@@ -110,7 +110,9 @@ export async function exchangeMiniProgramCodeForOpenId(code: string): Promise<st
   url.searchParams.set('grant_type', 'authorization_code');
   const response = await fetch(url.toString(), { method: 'GET', cache: 'no-store' });
   const body = (await response.json()) as Record<string, unknown>;
-  if (!response.ok || typeof body.errcode === 'number' || typeof body.openid !== 'string') {
+  const errcode = body.errcode;
+  const wechatFailed = typeof errcode === 'number' && errcode !== 0;
+  if (!response.ok || wechatFailed || typeof body.openid !== 'string') {
     throw new Error(`WECHAT_MINIPROGRAM_CODE_EXCHANGE_FAILED:${String(body.errmsg ?? response.statusText)}`);
   }
   return body.openid;

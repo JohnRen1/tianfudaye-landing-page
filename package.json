@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "next dev",
     "tax-ai:up": "bash scripts/local-tax-ai.sh start",
+    "tax-ai:test": "bash scripts/local-tax-ai.sh test",
     "tax-ai:down": "bash scripts/local-tax-ai.sh stop",
     "tax-ai:status": "bash scripts/local-tax-ai.sh status",
+    "tax-ai:check": "bash scripts/local-tax-ai.sh check",
     "tax-ai:logs": "bash scripts/local-tax-ai.sh logs",
     "build": "next build",
     "start": "next start",

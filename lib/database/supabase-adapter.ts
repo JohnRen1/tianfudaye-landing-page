@@ -1461,7 +1461,7 @@ export async function verifyAndConsumeDevCode(phone: string, code: string): Prom
   const serviceClient = createServiceClient();
   const now = new Date().toISOString();
 
-  const { data: record } = await serviceClient
+  const { data: record, error } = await serviceClient
     .from('phone_verification_codes')
     .select('id, code')
     .eq('phone', phone)
@@ -1470,16 +1470,28 @@ export async function verifyAndConsumeDevCode(phone: string, code: string): Prom
     .gt('expires_at', now)
     .order('created_at', { ascending: false })
     .limit(1)
-    .single();
+    .maybeSingle();
 
-  if (!record || record.code !== code) return false;
+  if (error) {
+    console.error('[verify-code] lookup failed', { code: error.code, message: error.message });
+    throw new Error('CODE_LOOKUP_FAILED');
+  }
 
-  await serviceClient
+  if (!record || String(record.code) !== code) return false;
+
+  const { data: consumed, error: consumeError } = await serviceClient
     .from('phone_verification_codes')
     .update({ consumed_at: now })
-    .eq('id', record.id);
+    .eq('id', record.id)
+    .is('consumed_at', null)
+    .select('id');
 
-  return true;
+  if (consumeError) {
+    console.error('[verify-code] consume failed', { code: consumeError.code, message: consumeError.message });
+    throw new Error('CODE_LOOKUP_FAILED');
+  }
+
+  return Array.isArray(consumed) && consumed.length > 0;
 }
 
 export async function sendDevPhoneCode(phone: string): Promise<SendCodeResponseDTO & { _devCode?: string }> {
@@ -1522,9 +1534,13 @@ export async function sendDevPhoneCode(phone: string): Promise<SendCodeResponseD
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(now.getTime() + VERIFICATION_CODE_TTL_MS).toISOString();
 
-  await serviceClient
+  const { error: insertError } = await serviceClient
     .from('phone_verification_codes')
     .insert({ phone, code, purpose: 'login', expires_at: expiresAt });
+  if (insertError) {
+    console.error('[send-code] persist failed', { code: insertError.code, message: insertError.message });
+    throw new Error('CODE_STORE_FAILED');
+  }
 
   return {
     expiresInSeconds: 300,
@@ -1548,66 +1564,100 @@ function mapCurrentUser(row: Record<string, unknown>): CurrentUserDTO {
   };
 }
 
+const USER_ID_FIELDS = 'id, phone, name, identity, company, industry, size, registered_at, active_at, is_profile_complete';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function optionalUuid(value: string | undefined): string | undefined {
+  return value && UUID_PATTERN.test(value) ? value : undefined;
+}
+
+function isDuplicateUserError(error: { code?: string; message?: string }): boolean {
+  return error.code === '23505' || (error.message ?? '').includes('users_phone_uq');
+}
+
+function isAttributionError(error: { code?: string }): boolean {
+  return error.code === '23503' || error.code === '22P02';
+}
+
 export async function loginOrCreateUserByPhone(params: {
   phone: string;
   sourceQrId?: string;
   sourceActivityId?: string;
 }): Promise<{ user: CurrentUserDTO; isNew: boolean }> {
   const serviceClient = createServiceClient();
-  const userFields = 'id, phone, name, identity, company, industry, size, registered_at, active_at, is_profile_complete';
-  const { data: existingUser } = await serviceClient
+  const { data: existingUser, error: lookupError } = await serviceClient
     .from('users')
-    .select(userFields)
+    .select(USER_ID_FIELDS)
     .eq('phone', params.phone)
-    .single();
+    .maybeSingle();
 
-  let userId: string;
-  let isNew = false;
+  if (lookupError) throw new Error(lookupError.message);
 
   if (existingUser) {
-    userId = existingUser.id as string;
-    await serviceClient
+    const activeAt = new Date().toISOString();
+    const { data: refreshed, error: refreshError } = await serviceClient
       .from('users')
-      .update({ active_at: new Date().toISOString() })
-      .eq('id', userId);
-  } else {
-    isNew = true;
+      .update({ active_at: activeAt })
+      .eq('id', existingUser.id)
+      .select(USER_ID_FIELDS)
+      .maybeSingle();
+    if (refreshError) {
+      console.error('[loginOrCreateUserByPhone] refresh active_at failed:', refreshError.message);
+    }
+    return { user: mapCurrentUser((refreshed ?? existingUser) as Record<string, unknown>), isNew: false };
+  }
+
+  const sourceQrId = optionalUuid(params.sourceQrId);
+  const sourceActivityId = optionalUuid(params.sourceActivityId);
+  if (params.sourceQrId && !sourceQrId) {
+    console.warn('[loginOrCreateUserByPhone] ignore non-uuid sourceQrId');
+  }
+  if (params.sourceActivityId && !sourceActivityId) {
+    console.warn('[loginOrCreateUserByPhone] ignore non-uuid sourceActivityId');
+  }
+
+  const insertUser = async (withAttribution: boolean) => {
     const insertData: Record<string, unknown> = {
       phone: params.phone,
       is_profile_complete: false,
     };
-    if (params.sourceQrId) insertData.source_qr_id = params.sourceQrId;
-    if (params.sourceActivityId) insertData.source_activity_id = params.sourceActivityId;
+    if (withAttribution && sourceQrId) insertData.source_qr_id = sourceQrId;
+    if (withAttribution && sourceActivityId) insertData.source_activity_id = sourceActivityId;
+    return serviceClient.from('users').insert(insertData).select(USER_ID_FIELDS).single();
+  };
 
-    const { data: newUser, error } = await serviceClient
+  let { data: newUser, error } = await insertUser(true);
+  if (error && isAttributionError(error) && (sourceQrId || sourceActivityId)) {
+    console.warn('[loginOrCreateUserByPhone] attribution rejected, create user without source', error.message);
+    ({ data: newUser, error } = await insertUser(false));
+  }
+  if (error && isDuplicateUserError(error)) {
+    const { data: racedUser, error: racedError } = await serviceClient
       .from('users')
-      .insert(insertData)
-      .select(userFields)
-      .single();
+      .select(USER_ID_FIELDS)
+      .eq('phone', params.phone)
+      .maybeSingle();
+    if (racedError) throw new Error(racedError.message);
+    if (racedUser) return { user: mapCurrentUser(racedUser as Record<string, unknown>), isNew: false };
+  }
+  if (error || !newUser) throw new Error(error?.message ?? '用户创建失败');
 
-    if (error || !newUser) throw new Error(error?.message ?? '用户创建失败');
-    userId = newUser.id as string;
-
-    if (params.sourceActivityId) {
-      try {
-        await incrementActivityCounter(serviceClient, params.sourceActivityId, 'register');
-      } catch (counterErr) {
-        console.error('[loginOrCreateUserByPhone] incrementActivityCounter failed:', counterErr instanceof Error ? counterErr.message : counterErr);
-      }
+  if (sourceActivityId) {
+    try {
+      await incrementActivityCounter(serviceClient, sourceActivityId, 'register');
+    } catch (counterErr) {
+      console.error('[loginOrCreateUserByPhone] incrementActivityCounter failed:', counterErr instanceof Error ? counterErr.message : counterErr);
     }
-    if (params.sourceQrId) {
-      await incrementQrCounter(serviceClient, params.sourceQrId, 'registers');
+  }
+  if (sourceQrId) {
+    try {
+      await incrementQrCounter(serviceClient, sourceQrId, 'registers');
+    } catch (counterErr) {
+      console.error('[loginOrCreateUserByPhone] incrementQrCounter failed:', counterErr instanceof Error ? counterErr.message : counterErr);
     }
   }
 
-  const { data: userData } = await serviceClient
-    .from('users')
-    .select(userFields)
-    .eq('id', userId)
-    .single();
-
-  if (!userData) throw new Error('用户数据获取失败');
-  return { user: mapCurrentUser(userData as Record<string, unknown>), isNew };
+  return { user: mapCurrentUser(newUser as Record<string, unknown>), isNew: true };
 }
 
 export function buildPhoneLoginResponse(params: {
@@ -1676,7 +1726,13 @@ export async function bindWechatOpenIdToUser(userId: string, openid: string): Pr
     .eq('openid', openid)
     .maybeSingle();
   if (ownerError) throw new Error(ownerError.message);
-  if (owner && owner.id !== userId) throw new Error('WECHAT_OPENID_ALREADY_BOUND');
+  if (owner && owner.id !== userId) {
+    const { error: clearError } = await serviceClient
+      .from('users')
+      .update({ openid: null })
+      .eq('id', owner.id);
+    if (clearError) throw new Error(clearError.message);
+  }
   const { error } = await serviceClient
     .from('users')
     .update({ openid, active_at: new Date().toISOString() })
