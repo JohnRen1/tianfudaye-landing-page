@@ -43,9 +43,11 @@ describe('chat history', () => {
     mocks.auth.mockResolvedValue({ userId: 'me' });
     const query = chain([]);
     const response = await GET(new NextRequest('http://localhost/api/ai/history?session=other-session&userId=other'));
+    const body = await response.json();
     expect(query.eq).toHaveBeenCalledWith('user_id', 'me');
     expect(query.eq).toHaveBeenCalledWith('session_id', 'other-session');
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ success: true, data: [] });
   });
 
   it('paginates sessions rather than individual turns', async () => {

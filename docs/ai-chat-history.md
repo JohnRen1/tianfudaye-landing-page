@@ -18,7 +18,7 @@
 
 GET `/api/ai/history?page=1` 返回 `{items: [{sessionId,title,preview,updatedAt,turns}],hasMore}`。
 GET `/api/ai/history?session=...` 返回按时间及 ID 排序的 `{id,question,answer,createdAt}[]`。
-响应使用项目统一 success/data 包装。未登录 401、参数错误 400、会话不存在或不属于用户 404、查询失败 500。
+响应使用项目统一 success/data 包装。未登录 401、参数错误 400、查询失败 500。当前账号下没有该会话记录时返回 200 和空数组，已发布客户端据此结束恢复并可以继续提问。查询仍只使用登录用户的 userId。
 
 两个查询始终使用登录态 userId 筛选；不接受客户端用户身份。没有 session_id 的历史单条记录以 `record:<id>` 展示，读取时额外要求 session_id 为空，后续追问开启新会话并传递已恢复上下文。
 

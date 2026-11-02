@@ -15,9 +15,8 @@ export async function GET(req: NextRequest) {
   }
   try {
     if (sessionId !== null) {
-      const turns = await getChatSession(user.userId, sessionId);
-      if (!turns.length) return fail('CHAT_NOT_FOUND', '该对话不存在或不属于当前账号', 404);
-      return ok(turns);
+      // 已发布小程序遇到 404 会停在「正在恢复对话」。没有记录时返回空数组，恢复结束并可继续提问。
+      return ok(await getChatSession(user.userId, sessionId));
     }
     return ok(await listChatSessions(user.userId, page));
   } catch {
