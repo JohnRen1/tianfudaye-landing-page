@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { isProtectedBusinessPath } from '@/lib/route-auth';
 
 describe('landing route authentication policy', () => {
-  it.each(['/', '/login', '/auth/wechat/callback', '/tax-code'])('keeps %s public', (path) => {
+  it.each(['/', '/login', '/auth/wechat/callback', '/tax-code', '/qa-front', '/qa-front/backend'])('keeps %s public', (path) => {
     expect(isProtectedBusinessPath(path)).toBe(false);
   });
 
