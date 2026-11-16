@@ -15,6 +15,17 @@ const mockRows: RecordRow[] = [
   { id: 'm10', name: '吴嘉树', phone: '186****9144', score: 18, wrongCount: 2, baseDuration: 502, penaltySeconds: 20, finalDuration: 522, submittedAt: '2026-11-16 14:26' },
 ]
 
+export const NAME_TAKEN_MESSAGE = '该姓名已参加过'
+
+export function nameKey(name: string) {
+  return name.trim().replace(/\s+/g, '').toLowerCase()
+}
+
+export function isNameTaken(name: string, rows: Pick<RecordRow, 'name'>[]) {
+  const key = nameKey(name)
+  return key.length > 0 && rows.some((row) => nameKey(row.name) === key)
+}
+
 export function loadStoredRows(): RecordRow[] {
   const raw = localStorage.getItem(STORAGE_KEY)
   if (!raw) return []
@@ -30,11 +41,38 @@ export function sampleRows() {
   return mockRows
 }
 
-export function leaderboardRows(): RecordRow[] {
-  const stored = loadStoredRows()
-  const storedIds = new Set(stored.map((row) => row.id))
-  const samples = mockRows.filter((row) => !storedIds.has(row.id))
+export function leaderboardFrom(stored: RecordRow[]): RecordRow[] {
+  const taken = new Set(stored.map((row) => nameKey(row.name)))
+  const samples = mockRows.filter((row) => !taken.has(nameKey(row.name)))
   return [...samples, ...stored].sort((a, b) => a.finalDuration - b.finalDuration || a.submittedAt.localeCompare(b.submittedAt))
+}
+
+export function leaderboardRows(): RecordRow[] {
+  return leaderboardFrom(loadStoredRows())
+}
+
+type StoredRecordResponse = { success: true; data: RecordRow[] } | { success: false; error?: { message?: string } }
+
+export async function fetchRecords(): Promise<RecordRow[]> {
+  const response = await fetch('/api/folk-quiz/records', { cache: 'no-store' })
+  const body = (await response.json()) as StoredRecordResponse
+  if (!response.ok || !body.success) {
+    throw new Error(body.success ? '成绩读取失败' : body.error?.message || '成绩读取失败')
+  }
+  return body.data
+}
+
+export async function submitRecord(row: Omit<RecordRow, 'id' | 'phone' | 'submittedAt'> & { phone: string }): Promise<RecordRow> {
+  const response = await fetch('/api/folk-quiz/records', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(row),
+  })
+  const body = (await response.json()) as { success: true; data: RecordRow } | { success: false; error?: { message?: string } }
+  if (!response.ok || !body.success) {
+    throw new Error(!body.success && body.error?.message ? body.error.message : '成绩没有保存')
+  }
+  return body.data
 }
 
 export function formatSpokenDuration(seconds: number) {

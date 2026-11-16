@@ -107,10 +107,15 @@
   color: #5c6570;
 }
 
-.folk-quiz .login .error {
+.folk-quiz .error {
   margin-top: 10px;
   color: #b4332a;
   font-size: 14px;
+}
+
+.folk-quiz .primary:disabled {
+  cursor: default;
+  opacity: 0.7;
 }
 
 .folk-quiz .primary {

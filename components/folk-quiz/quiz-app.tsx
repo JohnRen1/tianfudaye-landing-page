@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { questions } from "@/lib/folk-quiz/questions";
-import { formatDuration, formatSpokenDuration, leaderboardRows, loadStoredRows, maskPhone, saveRows, validPhone } from "@/lib/folk-quiz/records";
+import { NAME_TAKEN_MESSAGE, fetchRecords, formatDuration, formatSpokenDuration, isNameTaken, leaderboardFrom, submitRecord, validPhone } from "@/lib/folk-quiz/records";
 import type { RecordRow } from "@/lib/folk-quiz/types";
 import "./folk-quiz.css";
 
@@ -33,8 +33,8 @@ function Trophy() {
   );
 }
 
-function ResultScreen({ result, total, onAgain }: { result: RecordRow; total: number; onAgain: () => void }) {
-  const board = leaderboardRows();
+function ResultScreen({ result, total, rows, onAgain }: { result: RecordRow; total: number; rows: RecordRow[]; onAgain: () => void }) {
+  const board = leaderboardFrom(rows);
   const rank = Math.max(1, board.findIndex((row) => row.id === result.id) + 1);
 
   return (
@@ -73,6 +73,9 @@ export function QuizApp() {
   const [seconds, setSeconds] = useState(0);
   const [startedAt, setStartedAt] = useState(0);
   const [result, setResult] = useState<RecordRow | null>(null);
+  const [rows, setRows] = useState<RecordRow[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const nameRef = useRef<HTMLInputElement>(null);
   const phoneRef = useRef<HTMLInputElement>(null);
   const current = questions[index];
@@ -97,7 +100,7 @@ export function QuizApp() {
     return () => window.removeEventListener("beforeunload", onLeave);
   }, [screen]);
 
-  function start(event: FormEvent) {
+  async function start(event: FormEvent) {
     event.preventDefault();
     if (!name.trim()) {
       setError("请填写姓名");
@@ -109,7 +112,22 @@ export function QuizApp() {
       phoneRef.current?.focus();
       return;
     }
+    setBusy(true);
+    try {
+      const existing = await fetchRecords();
+      if (isNameTaken(name, existing)) {
+        setError(NAME_TAKEN_MESSAGE);
+        nameRef.current?.focus();
+        return;
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "暂时无法核对该姓名，请稍后再试");
+      return;
+    } finally {
+      setBusy(false);
+    }
     setError("");
+    setSaveError("");
     setAnswers([]);
     setIndex(0);
     setSelected(null);
@@ -124,25 +142,32 @@ export function QuizApp() {
     setSelected(optionIndex);
   }
 
-  function next() {
-    if (selected === null) return;
+  async function next() {
+    if (selected === null || busy) return;
     const allAnswers = [...answers, selected];
     if (index === questions.length - 1) {
       const penaltySeconds = allAnswers.reduce((sum, answer, questionIndex) => sum + (answer === questions[questionIndex].answer ? 0 : 10), 0);
-      const row: RecordRow = {
-        id: crypto.randomUUID(),
-        name: name.trim(),
-        phone: maskPhone(phone),
-        score: allAnswers.reduce((count, answer, questionIndex) => count + (answer === questions[questionIndex].answer ? 1 : 0), 0),
-        wrongCount: allAnswers.filter((answer, questionIndex) => answer !== questions[questionIndex].answer).length,
-        baseDuration: seconds,
-        penaltySeconds,
-        finalDuration: seconds + penaltySeconds,
-        submittedAt: new Date().toLocaleString("zh-CN", { hour12: false }),
-      };
-      saveRows([...loadStoredRows(), row]);
-      setResult(row);
-      setScreen("result");
+      const wrongCount = allAnswers.filter((answer, questionIndex) => answer !== questions[questionIndex].answer).length;
+      setBusy(true);
+      setSaveError("");
+      try {
+        const row = await submitRecord({
+          name: name.trim(),
+          phone,
+          score: allAnswers.reduce((count, answer, questionIndex) => count + (answer === questions[questionIndex].answer ? 1 : 0), 0),
+          wrongCount,
+          baseDuration: seconds,
+          penaltySeconds,
+          finalDuration: seconds + penaltySeconds,
+        });
+        setRows(await fetchRecords());
+        setResult(row);
+        setScreen("result");
+      } catch (cause) {
+        setSaveError(cause instanceof Error ? cause.message : "成绩没有保存");
+      } finally {
+        setBusy(false);
+      }
       return;
     }
     setAnswers((value) => [...value, selected]);
@@ -203,7 +228,7 @@ export function QuizApp() {
               />
             </label>
             {error && <p className="error" role="alert">{error}</p>}
-            <button className="primary" type="submit">开始答题</button>
+            <button className="primary" type="submit" disabled={busy}>开始答题</button>
           </form>
         </main>
       )}
@@ -247,8 +272,9 @@ export function QuizApp() {
                   <p>{correct ? current.note : `答错，用时增加 10 秒。${current.note}`}</p>
                 </div>
               )}
+              {saveError && <p className="error" role="alert">{saveError}</p>}
               {answered && (
-                <button className="primary" type="button" onClick={next}>
+                <button className="primary" type="button" onClick={() => void next()} disabled={busy}>
                   {index === questions.length - 1 ? "完成" : "下一题"}
                 </button>
               )}
@@ -257,7 +283,7 @@ export function QuizApp() {
         </main>
       )}
       {screen === "result" && result && (
-        <ResultScreen result={result} total={questions.length} onAgain={reset} />
+        <ResultScreen result={result} total={questions.length} rows={rows} onAgain={reset} />
       )}
     </div>
   );

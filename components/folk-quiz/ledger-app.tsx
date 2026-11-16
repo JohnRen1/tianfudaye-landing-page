@@ -1,27 +1,32 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatDuration, leaderboardRows, loadStoredRows } from "@/lib/folk-quiz/records";
+import { fetchRecords, formatDuration, leaderboardFrom } from "@/lib/folk-quiz/records";
 import type { RecordRow } from "@/lib/folk-quiz/types";
 import "./folk-quiz.css";
 
-function readLedger() {
-  return {
-    rows: leaderboardRows(),
-    sample: loadStoredRows().length === 0,
-  };
-}
+type LedgerState = { rows: RecordRow[]; sample: boolean; failed: boolean };
 
 export function LedgerApp() {
-  const [ledger, setLedger] = useState<ReturnType<typeof readLedger> | null>(null);
+  const [ledger, setLedger] = useState<LedgerState | null>(null);
 
   useEffect(() => {
-    const sync = () => setLedger(readLedger());
+    let active = true;
+    const sync = () => {
+      void fetchRecords()
+        .then((stored) => {
+          if (!active) return;
+          setLedger({ rows: leaderboardFrom(stored), sample: stored.length === 0, failed: false });
+        })
+        .catch(() => {
+          if (!active) return;
+          setLedger({ rows: [], sample: false, failed: true });
+        });
+    };
     sync();
-    window.addEventListener("storage", sync);
     window.addEventListener("focus", sync);
     return () => {
-      window.removeEventListener("storage", sync);
+      active = false;
       window.removeEventListener("focus", sync);
     };
   }, []);
@@ -34,9 +39,9 @@ export function LedgerApp() {
       <main id="main" className="ledger">
         <header className="ledger-head">
           <h1>参赛台账</h1>
-          <p>{ledger == null ? "正在读取记录" : ledger.sample ? "当前是示例记录" : `共 ${rows.length} 条`}</p>
+          <p>{ledger == null ? "正在读取记录" : ledger.failed ? "记录读取失败" : ledger.sample ? "当前是示例记录" : `共 ${rows.length} 条`}</p>
         </header>
-        {ledger != null && rows.length === 0 ? (
+        {ledger?.failed ? null : ledger != null && rows.length === 0 ? (
           <p className="empty">还没有参赛记录</p>
         ) : (
           <div className="table-wrap">
