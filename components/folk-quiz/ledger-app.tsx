@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { questions } from "@/lib/folk-quiz/questions";
 import { fetchRecords, formatDuration, leaderboardFrom } from "@/lib/folk-quiz/records";
 import type { RecordRow } from "@/lib/folk-quiz/types";
 import "./folk-quiz.css";
@@ -63,7 +64,7 @@ export function LedgerApp() {
                     <td>{index + 1}</td>
                     <td>{row.name}</td>
                     <td>{row.phone}</td>
-                    <td>{row.score} / 20</td>
+                    <td>{row.score} / {questions.length}</td>
                     <td>{row.wrongCount}</td>
                     <td>
                       {formatDuration(row.finalDuration)}

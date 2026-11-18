@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createServiceClient } from '@/lib/supabase'
-import { questions } from './questions'
+import { QUIZ_LIMIT_SECONDS, questions } from './questions'
 import { NAME_TAKEN_MESSAGE, maskPhone, nameKey, validPhone } from './records'
 import type { RecordRow } from './types'
 
@@ -78,7 +78,7 @@ export function normalizeNewRecord(input: unknown): NewRecord {
   if (!validPhone(phone)) throw new Error('请输入有效的 11 位手机号')
   if (!Number.isInteger(score) || score == null || score < 0 || score > total) throw new Error('成绩无效')
   if (wrongCount !== total - score) throw new Error('成绩无效')
-  if (!Number.isInteger(baseDuration) || baseDuration == null || baseDuration < 0 || baseDuration > 24 * 60 * 60) throw new Error('用时无效')
+  if (!Number.isInteger(baseDuration) || baseDuration == null || baseDuration < 0 || baseDuration > QUIZ_LIMIT_SECONDS) throw new Error('用时无效')
   if (penaltySeconds !== wrongCount * 10) throw new Error('成绩无效')
   if (finalDuration !== baseDuration + penaltySeconds) throw new Error('成绩无效')
   return { name, phone, score, wrongCount, baseDuration, penaltySeconds, finalDuration }

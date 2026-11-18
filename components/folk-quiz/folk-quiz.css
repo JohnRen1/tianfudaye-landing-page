@@ -188,11 +188,35 @@
   padding: 16px;
 }
 
+.folk-quiz .kind {
+  margin-bottom: 8px;
+  color: #5c6570;
+  font-size: 13px;
+}
+
 .folk-quiz .sheet h2 {
   font-size: 16px;
   font-weight: 600;
   line-height: 1.6;
   text-wrap: pretty;
+}
+
+.folk-quiz .blank input {
+  display: block;
+  width: 100%;
+  height: 44px;
+  margin-top: 16px;
+  padding: 0 12px;
+  border: 1px solid #e1e4e8;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2329;
+  font-size: 16px;
+}
+
+.folk-quiz .status .urgent {
+  color: #b4332a;
+  font-weight: 600;
 }
 
 .folk-quiz .options {
@@ -259,6 +283,36 @@
 
 .folk-quiz .sheet .primary {
   margin-top: 16px;
+}
+
+.folk-quiz .blank-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.folk-quiz .blank-actions .primary,
+.folk-quiz .blank-actions .secondary {
+  margin-top: 0;
+}
+
+.folk-quiz .secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 44px;
+  border: 1px solid #e1e4e8;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2329;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.folk-quiz .secondary:hover {
+  background: #f5f6f8;
 }
 
 .folk-quiz .finish {

@@ -1,8 +1,10 @@
 export type Question = {
   id: number
+  kind: 'choice' | 'judge' | 'blank'
   text: string
   options: string[]
   answer: number
+  answerText?: string
   note: string
 }
 

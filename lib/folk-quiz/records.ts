@@ -3,16 +3,16 @@ import type { RecordRow } from './types'
 const STORAGE_KEY = 'folk-quiz-records'
 
 const mockRows: RecordRow[] = [
-  { id: 'm1', name: '梁书宁', phone: '176****1056', score: 20, wrongCount: 0, baseDuration: 333, penaltySeconds: 0, finalDuration: 333, submittedAt: '2026-11-16 14:02' },
-  { id: 'm2', name: '陈思远', phone: '136****8810', score: 20, wrongCount: 0, baseDuration: 356, penaltySeconds: 0, finalDuration: 356, submittedAt: '2026-11-16 14:05' },
-  { id: 'm3', name: '许知夏', phone: '158****2207', score: 16, wrongCount: 4, baseDuration: 368, penaltySeconds: 40, finalDuration: 408, submittedAt: '2026-11-16 14:11' },
-  { id: 'm4', name: '苏晚晴', phone: '137****5521', score: 19, wrongCount: 1, baseDuration: 401, penaltySeconds: 10, finalDuration: 411, submittedAt: '2026-11-16 14:09' },
-  { id: 'm5', name: '周明远', phone: '139****7712', score: 17, wrongCount: 3, baseDuration: 392, penaltySeconds: 30, finalDuration: 422, submittedAt: '2026-11-16 14:12' },
-  { id: 'm6', name: '何清和', phone: '151****6628', score: 15, wrongCount: 5, baseDuration: 380, penaltySeconds: 50, finalDuration: 430, submittedAt: '2026-11-16 14:15' },
-  { id: 'm7', name: '林晓雯', phone: '138****2048', score: 18, wrongCount: 2, baseDuration: 418, penaltySeconds: 20, finalDuration: 438, submittedAt: '2026-11-16 14:08' },
-  { id: 'm8', name: '赵一楠', phone: '150****3390', score: 16, wrongCount: 4, baseDuration: 445, penaltySeconds: 40, finalDuration: 485, submittedAt: '2026-11-16 14:18' },
-  { id: 'm9', name: '马澄', phone: '187****4483', score: 20, wrongCount: 0, baseDuration: 489, penaltySeconds: 0, finalDuration: 489, submittedAt: '2026-11-16 14:21' },
-  { id: 'm10', name: '吴嘉树', phone: '186****9144', score: 18, wrongCount: 2, baseDuration: 502, penaltySeconds: 20, finalDuration: 522, submittedAt: '2026-11-16 14:26' },
+  { id: 'm1', name: '梁书宁', phone: '176****1056', score: 50, wrongCount: 0, baseDuration: 333, penaltySeconds: 0, finalDuration: 333, submittedAt: '2026-11-16 14:02' },
+  { id: 'm2', name: '陈思远', phone: '136****8810', score: 50, wrongCount: 0, baseDuration: 356, penaltySeconds: 0, finalDuration: 356, submittedAt: '2026-11-16 14:05' },
+  { id: 'm3', name: '许知夏', phone: '158****2207', score: 46, wrongCount: 4, baseDuration: 368, penaltySeconds: 40, finalDuration: 408, submittedAt: '2026-11-16 14:11' },
+  { id: 'm4', name: '苏晚晴', phone: '137****5521', score: 49, wrongCount: 1, baseDuration: 401, penaltySeconds: 10, finalDuration: 411, submittedAt: '2026-11-16 14:09' },
+  { id: 'm5', name: '周明远', phone: '139****7712', score: 47, wrongCount: 3, baseDuration: 392, penaltySeconds: 30, finalDuration: 422, submittedAt: '2026-11-16 14:12' },
+  { id: 'm6', name: '何清和', phone: '151****6628', score: 45, wrongCount: 5, baseDuration: 380, penaltySeconds: 50, finalDuration: 430, submittedAt: '2026-11-16 14:15' },
+  { id: 'm7', name: '林晓雯', phone: '138****2048', score: 48, wrongCount: 2, baseDuration: 418, penaltySeconds: 20, finalDuration: 438, submittedAt: '2026-11-16 14:08' },
+  { id: 'm8', name: '赵一楠', phone: '150****3390', score: 46, wrongCount: 4, baseDuration: 445, penaltySeconds: 40, finalDuration: 485, submittedAt: '2026-11-16 14:18' },
+  { id: 'm9', name: '马澄', phone: '187****4483', score: 50, wrongCount: 0, baseDuration: 489, penaltySeconds: 0, finalDuration: 489, submittedAt: '2026-11-16 14:21' },
+  { id: 'm10', name: '吴嘉树', phone: '186****9144', score: 48, wrongCount: 2, baseDuration: 502, penaltySeconds: 20, finalDuration: 522, submittedAt: '2026-11-16 14:26' },
 ]
 
 export const NAME_TAKEN_MESSAGE = '该姓名已参加过'
