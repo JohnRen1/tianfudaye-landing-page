@@ -53,6 +53,57 @@ export function leaderboardRows(): RecordRow[] {
 
 type StoredRecordResponse = { success: true; data: RecordRow[] } | { success: false; error?: { message?: string } }
 
+export type QuizEventState = { startAt: string | null; endAt: string | null; serverNow: string }
+
+export async function fetchEvent(): Promise<QuizEventState> {
+  const response = await fetch('/api/folk-quiz/event', { cache: 'no-store' })
+  const body = (await response.json()) as { success: true; data: QuizEventState } | { success: false; error?: { message?: string } }
+  if (!response.ok || !body.success) {
+    throw new Error(body.success ? '活动时间读取失败' : body.error?.message || '活动时间读取失败')
+  }
+  return body.data
+}
+
+export async function saveEvent(startAt: string, endAt: string): Promise<QuizEventState> {
+  const response = await fetch('/api/folk-quiz/event', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ startAt, endAt }),
+  })
+  const body = (await response.json()) as { success: true; data: QuizEventState } | { success: false; error?: { message?: string } }
+  if (!response.ok || !body.success) {
+    throw new Error(!body.success && body.error?.message ? body.error.message : '活动时间没有保存')
+  }
+  return body.data
+}
+
+export function eventLimitSeconds(event: QuizEventState | null) {
+  if (!event?.startAt || !event.endAt) return 30 * 60
+  return Math.max(0, Math.floor((Date.parse(event.endAt) - Date.parse(event.startAt)) / 1000))
+}
+
+export function formatEventTime(iso: string) {
+  return new Date(iso).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+export function toDatetimeLocalValue(iso: string) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(iso))
+  const read = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
+  return `${read('year')}-${read('month')}-${read('day')}T${read('hour')}:${read('minute')}`
+}
+
+export function fromDatetimeLocalValue(value: string) {
+  return new Date(`${value}:00+08:00`).toISOString()
+}
+
 export async function fetchRecords(): Promise<RecordRow[]> {
   const response = await fetch('/api/folk-quiz/records', { cache: 'no-store' })
   const body = (await response.json()) as StoredRecordResponse

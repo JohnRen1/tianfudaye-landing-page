@@ -3,6 +3,7 @@ import { NameTakenError, createFolkQuizRecord, listFolkQuizRecords } from '@/lib
 import { NAME_TAKEN_MESSAGE } from '@/lib/folk-quiz/records'
 
 export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
 
 export async function GET() {
   try {

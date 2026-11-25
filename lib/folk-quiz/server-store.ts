@@ -6,6 +6,7 @@ import type { RecordRow } from './types'
 
 const BUCKET = 'folk-quiz-records'
 const FOLDER = 'records'
+const EVENT_PATH = 'event/window.json'
 
 export class NameTakenError extends Error {
   constructor() {
@@ -63,7 +64,7 @@ function readRow(value: unknown): RecordRow | null {
   }
 }
 
-export function normalizeNewRecord(input: unknown): NewRecord {
+export function normalizeNewRecord(input: unknown, limitSeconds = QUIZ_LIMIT_SECONDS): NewRecord {
   const source = input && typeof input === 'object' ? input as Partial<NewRecord> : {}
   const name = typeof source.name === 'string' ? source.name.trim() : ''
   const phone = typeof source.phone === 'string' ? source.phone.trim() : ''
@@ -78,7 +79,7 @@ export function normalizeNewRecord(input: unknown): NewRecord {
   if (!validPhone(phone)) throw new Error('请输入有效的 11 位手机号')
   if (!Number.isInteger(score) || score == null || score < 0 || score > total) throw new Error('成绩无效')
   if (wrongCount !== total - score) throw new Error('成绩无效')
-  if (!Number.isInteger(baseDuration) || baseDuration == null || baseDuration < 0 || baseDuration > QUIZ_LIMIT_SECONDS) throw new Error('用时无效')
+  if (!Number.isInteger(baseDuration) || baseDuration == null || baseDuration < 0 || baseDuration > limitSeconds) throw new Error('用时无效')
   if (penaltySeconds !== wrongCount * 10) throw new Error('成绩无效')
   if (finalDuration !== baseDuration + penaltySeconds) throw new Error('成绩无效')
   return { name, phone, score, wrongCount, baseDuration, penaltySeconds, finalDuration }
@@ -107,8 +108,44 @@ export async function listFolkQuizRecords(): Promise<RecordRow[]> {
   return rows.filter((row): row is RecordRow => row != null)
 }
 
+export type QuizEventWindow = { startAt: string; endAt: string }
+
+export async function readQuizEvent(): Promise<QuizEventWindow | null> {
+  await ensureBucket()
+  const client = createServiceClient()
+  const { data, error } = await client.storage.from(BUCKET).download(EVENT_PATH)
+  if (error || !data) return null
+  try {
+    const parsed = JSON.parse(await data.text()) as Partial<QuizEventWindow>
+    if (!parsed.startAt || !parsed.endAt) return null
+    const start = Date.parse(parsed.startAt)
+    const end = Date.parse(parsed.endAt)
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null
+    return { startAt: new Date(start).toISOString(), endAt: new Date(end).toISOString() }
+  } catch {
+    return null
+  }
+}
+
+export async function writeQuizEvent(startAt: string, endAt: string): Promise<QuizEventWindow> {
+  const start = Date.parse(startAt)
+  const end = Date.parse(endAt)
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) throw new Error('结束时间要晚于开始时间')
+  if (end - start > 24 * 60 * 60 * 1000) throw new Error('活动时长不能超过 24 小时')
+  await ensureBucket()
+  const event = { startAt: new Date(start).toISOString(), endAt: new Date(end).toISOString() }
+  const { error } = await createServiceClient().storage.from(BUCKET).upload(EVENT_PATH, JSON.stringify(event), {
+    contentType: 'application/json',
+    upsert: true,
+  })
+  if (error) throw new Error(error.message)
+  return event
+}
+
 export async function createFolkQuizRecord(input: unknown): Promise<RecordRow> {
-  const record = normalizeNewRecord(input)
+  const event = await readQuizEvent()
+  const limitSeconds = event ? Math.floor((Date.parse(event.endAt) - Date.parse(event.startAt)) / 1000) : QUIZ_LIMIT_SECONDS
+  const record = normalizeNewRecord(input, limitSeconds)
   await ensureBucket()
   const client = createServiceClient()
   const row: RecordRow = {

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { questions } from "@/lib/folk-quiz/questions";
-import { fetchRecords, formatDuration, leaderboardFrom } from "@/lib/folk-quiz/records";
+import { fetchEvent, fetchRecords, formatDuration, formatEventTime, fromDatetimeLocalValue, leaderboardFrom, saveEvent, toDatetimeLocalValue } from "@/lib/folk-quiz/records";
 import type { RecordRow } from "@/lib/folk-quiz/types";
 import "./folk-quiz.css";
 
@@ -10,6 +10,10 @@ type LedgerState = { rows: RecordRow[]; sample: boolean; failed: boolean };
 
 export function LedgerApp() {
   const [ledger, setLedger] = useState<LedgerState | null>(null);
+  const [startValue, setStartValue] = useState("");
+  const [endValue, setEndValue] = useState("");
+  const [eventMessage, setEventMessage] = useState("正在读取活动时间");
+  const [savingEvent, setSavingEvent] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -25,6 +29,20 @@ export function LedgerApp() {
         });
     };
     sync();
+    void fetchEvent()
+      .then((data) => {
+        if (!active) return;
+        if (data.startAt && data.endAt) {
+          setStartValue(toDatetimeLocalValue(data.startAt));
+          setEndValue(toDatetimeLocalValue(data.endAt));
+          setEventMessage(`当前场次 ${formatEventTime(data.startAt)} 至 ${formatEventTime(data.endAt)}`);
+          return;
+        }
+        setEventMessage("还没有设置活动时间，设置后参赛者才能答题");
+      })
+      .catch(() => {
+        if (active) setEventMessage("活动时间读取失败");
+      });
     window.addEventListener("focus", sync);
     return () => {
       active = false;
@@ -34,10 +52,35 @@ export function LedgerApp() {
 
   const rows = ledger?.rows ?? [];
 
+  async function saveWindow(event: FormEvent) {
+    event.preventDefault();
+    if (!startValue || !endValue) {
+      setEventMessage("请填写开始和结束时间");
+      return;
+    }
+    setSavingEvent(true);
+    try {
+      const saved = await saveEvent(fromDatetimeLocalValue(startValue), fromDatetimeLocalValue(endValue));
+      setEventMessage(saved.startAt && saved.endAt ? `已保存：${formatEventTime(saved.startAt)} 至 ${formatEventTime(saved.endAt)}` : "活动时间没有保存");
+    } catch (cause) {
+      setEventMessage(cause instanceof Error ? cause.message : "活动时间没有保存");
+    } finally {
+      setSavingEvent(false);
+    }
+  }
+
   return (
     <div className="folk-quiz">
       <a className="skip" href="#main">跳到主要内容</a>
       <main id="main" className="ledger">
+        <form className="event-form" onSubmit={(event) => void saveWindow(event)}>
+          <h2>活动时间</h2>
+          <p>整场共用一个截止时间。4 点开始、4 点半结束时，4 点进入剩 30 分钟，4 点 10 分进入剩 20 分钟。时间之外不能答题。</p>
+          <label>开始时间<input type="datetime-local" value={startValue} onChange={(event) => setStartValue(event.target.value)} required /></label>
+          <label>结束时间<input type="datetime-local" value={endValue} onChange={(event) => setEndValue(event.target.value)} required /></label>
+          <p>{eventMessage}</p>
+          <button className="primary" type="submit" disabled={savingEvent}>保存活动时间</button>
+        </form>
         <header className="ledger-head">
           <h1>参赛台账</h1>
           <p>{ledger == null ? "正在读取记录" : ledger.failed ? "记录读取失败" : ledger.sample ? "当前是示例记录" : `共 ${rows.length} 条`}</p>

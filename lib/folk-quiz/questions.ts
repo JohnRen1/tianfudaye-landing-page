@@ -14,7 +14,7 @@ export const questions: Question[] = [
   { id: 9, kind: 'choice', text: '裁缝的祖师是____。', options: ['轩辕', '颛顼', '神农', '女娲'], answer: 0, note: '裁缝的祖师是轩辕。' },
   { id: 10, kind: 'choice', text: '____是旧时农村家家户户都要编、用的搧凉工具。', options: ['麦秆扇', '团扇', '折扇', '羽扇'], answer: 0, note: '家家户户编、用的是麦秆扇。' },
   { id: 11, kind: 'choice', text: '旧时的小孩子要戴小手镯、脚镯、项箍、挂银锁等，认为用金银箍牢，可使小孩____。', options: ['吉祥', '如意', '平安', '富贵'], answer: 2, note: '箍牢是为了让小孩平安。' },
-  { id: 12, kind: 'choice', text: '建房得先选好地基，最好选择靠山近水、避风干燥处。风水先生根据家庭主要成员的生展八字，建房年月的干支、地形的特点，规定在东、南、西方向偏几度角，一般是朝南偏东一点点。首先是大地段的选定，要求高耸，明堂藏风蓄气，水口紧锁，____跳跃，____昂首，____俯伏，总之周围的山都不能给人以压迫感。', options: ['朱雀 玄武 青龙 白虎', '玄武 朱雀 青龙 白虎', '朱雀 玄武 白虎 青龙', '玄武 朱雀 白虎 青龙'], answer: 1, note: '对应顺序是玄武、朱雀、青龙、白虎。' },
+  { id: 12, kind: 'choice', text: '建房得先选好地基，最好选择靠山近水、避风干燥处。风水先生根据家庭主要成员的生辰八字，建房年月的干支、地形的特点，规定在东、南、西方向偏几度角，一般是朝南偏东一点点。首先是大地段的选定，要求____高耸，明堂藏风蓄气，水口紧锁，____跳跃，____昂首，____俯伏，总之周围的山都不能给人以压迫感。', options: ['朱雀 玄武 青龙 白虎', '玄武 朱雀 青龙 白虎', '朱雀 玄武 白虎 青龙', '玄武 朱雀 白虎 青龙'], answer: 1, note: '对应顺序是玄武、朱雀、青龙、白虎。' },
   { id: 13, kind: 'choice', text: '江山水道唯有____。', options: ['碗窑水库', '模溪淤', '须江', '江山港'], answer: 3, note: '江山水道唯有江山港。' },
   { id: 14, kind: 'choice', text: '旧时嫁女比较重视嫁妆，因为嫁妆多少常常决定女儿在夫家的地位，一般到了十二三岁就开始用形似修蜓的小竹器旋转捻棉纱织带，用苎麻织布线。带，分阔带和狭带两种，织有正字或囍字图案；布线，分大布线和____。', options: ['粗布线', '细布线', '金线', '银线'], answer: 1, note: '布线分大布线和细布线。' },
   { id: 15, kind: 'choice', text: '邻里间称婶娘她娌辈往往以其____冠之，如“溪滩娘”“航头娘”“江山县娘”“西安娘”等。', options: ['娘家地名', '夫家地名', '夫家姓氏', '本人姓氏'], answer: 0, note: '称呼前冠的是娘家地名。' },
@@ -72,8 +72,8 @@ export function correctAnswerLabel(question: Question) {
   return String.fromCharCode(65 + question.answer)
 }
 
-export function gradeAnswers(given: Array<number | string | null | undefined>, elapsedSeconds: number) {
-  const baseDuration = Math.min(Math.max(0, Math.floor(elapsedSeconds)), QUIZ_LIMIT_SECONDS)
+export function gradeAnswers(given: Array<number | string | null | undefined>, elapsedSeconds: number, limitSeconds = QUIZ_LIMIT_SECONDS) {
+  const baseDuration = Math.min(Math.max(0, Math.floor(elapsedSeconds)), Math.max(0, Math.floor(limitSeconds)))
   const score = questions.reduce((count, question, index) => count + (isCorrectAnswer(question, given[index]) ? 1 : 0), 0)
   const wrongCount = questions.length - score
   const penaltySeconds = wrongCount * 10

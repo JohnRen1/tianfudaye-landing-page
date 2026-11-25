@@ -1,25 +1,19 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { QUIZ_LIMIT_SECONDS, correctAnswerLabel, gradeAnswers, isCorrectAnswer, questions } from "@/lib/folk-quiz/questions";
-import { NAME_TAKEN_MESSAGE, fetchRecords, formatDuration, formatSpokenDuration, isNameTaken, leaderboardFrom, submitRecord, validPhone } from "@/lib/folk-quiz/records";
+import { gradeAnswers, questions } from "@/lib/folk-quiz/questions";
+import { NAME_TAKEN_MESSAGE, eventLimitSeconds, fetchEvent, fetchRecords, formatDuration, formatEventTime, formatSpokenDuration, isNameTaken, leaderboardFrom, submitRecord, validPhone, type QuizEventState } from "@/lib/folk-quiz/records";
 import type { RecordRow } from "@/lib/folk-quiz/types";
 import "./folk-quiz.css";
 
+const TITLE = "江山市图书馆阅读挑战赛";
 type Screen = "intro" | "quiz" | "result";
+type EventGate = "loading" | "unset" | "early" | "open" | "closed";
 
 function Chevron() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
       <path d="M11.5 3.5 6 9l5.5 5.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function Check() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M3.5 8.2 6.4 11l6.1-6.2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -63,48 +57,94 @@ function ResultScreen({ result, total, rows, timedOut, onAgain }: { result: Reco
   );
 }
 
+function eventGate(event: QuizEventState | null, now: number): EventGate {
+  if (!event) return "loading";
+  if (!event.startAt || !event.endAt) return "unset";
+  if (now < Date.parse(event.startAt)) return "early";
+  if (now >= Date.parse(event.endAt)) return "closed";
+  return "open";
+}
+
+function gateMessage(event: QuizEventState | null, gate: EventGate) {
+  if (gate === "loading") return "正在读取活动时间";
+  if (gate === "unset" || !event?.startAt || !event.endAt) return "活动时间尚未设置，暂时不能答题";
+  if (gate === "early") return `活动尚未开始，开始时间 ${formatEventTime(event.startAt)}`;
+  if (gate === "closed") return "活动已结束";
+  return "";
+}
+
 export function QuizApp() {
   const [screen, setScreen] = useState<Screen>("intro");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
   const [index, setIndex] = useState(0);
-  const [selected, setSelected] = useState<number | string | null>(null);
+  const [selected, setSelected] = useState<number | null>(null);
   const [answers, setAnswers] = useState<Array<number | string>>([]);
   const [blankDraft, setBlankDraft] = useState("");
   const [seconds, setSeconds] = useState(0);
-  const [startedAt, setStartedAt] = useState(0);
   const [result, setResult] = useState<RecordRow | null>(null);
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [eventState, setEventState] = useState<QuizEventState | null>(null);
+  const [clockOffset, setClockOffset] = useState(0);
+  const [remaining, setRemaining] = useState(0);
   const nameRef = useRef<HTMLInputElement>(null);
   const phoneRef = useRef<HTMLInputElement>(null);
-  const blankRef = useRef<HTMLInputElement>(null);
-  const snapshotRef = useRef({ answers, selected, index });
+  const snapshotRef = useRef({ answers, selected: null as number | string | null, index });
   const finishingRef = useRef(false);
   const submitRef = useRef<(elapsed: number, timeout: boolean) => Promise<void>>(async () => {});
+  const clockOffsetRef = useRef(0);
+  const startedAtRef = useRef(0);
+  const eventEndRef = useRef(0);
+  const limitRef = useRef(30 * 60);
   snapshotRef.current = { answers, selected, index };
   const current = questions[index];
-  const answered = selected !== null;
-  const correct = answered && isCorrectAnswer(current, selected);
-  const remaining = Math.max(0, QUIZ_LIMIT_SECONDS - seconds);
+  const now = Date.now() + clockOffset;
+  const gate = eventGate(eventState, now);
+  const canAnswer = current.kind === "blank" ? blankDraft.trim().length > 0 : selected !== null;
+
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      void fetchEvent()
+        .then((data) => {
+          if (!active) return;
+          const offset = Date.parse(data.serverNow) - Date.now();
+          clockOffsetRef.current = offset;
+          setClockOffset(offset);
+          setEventState(data);
+        })
+        .catch(() => {
+          if (!active) return;
+          setEventState({ startAt: null, endAt: null, serverNow: new Date().toISOString() });
+        });
+    };
+    load();
+    const timer = window.setInterval(load, 15000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     if (screen !== "quiz") return;
     const timer = window.setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
-      if (elapsed >= QUIZ_LIMIT_SECONDS) {
-        window.clearInterval(timer);
-        setSeconds(QUIZ_LIMIT_SECONDS);
-        void submitRef.current(QUIZ_LIMIT_SECONDS, true);
-        return;
-      }
+      const aligned = Date.now() + clockOffsetRef.current;
+      const left = Math.max(0, Math.floor((eventEndRef.current - aligned) / 1000));
+      const elapsed = Math.max(0, Math.floor((Math.min(aligned, eventEndRef.current) - startedAtRef.current) / 1000));
+      setRemaining(left);
       setSeconds(elapsed);
+      if (left <= 0) {
+        window.clearInterval(timer);
+        void submitRef.current(elapsed, true);
+      }
     }, 250);
     return () => window.clearInterval(timer);
-  }, [screen, startedAt]);
+  }, [screen]);
 
   useEffect(() => {
     if (screen !== "quiz") return;
@@ -130,30 +170,43 @@ export function QuizApp() {
     }
     setBusy(true);
     try {
+      const latest = await fetchEvent();
+      const offset = Date.parse(latest.serverNow) - Date.now();
+      clockOffsetRef.current = offset;
+      setClockOffset(offset);
+      setEventState(latest);
+      const aligned = Date.now() + offset;
+      const nextGate = eventGate(latest, aligned);
+      if (nextGate !== "open" || !latest.endAt) {
+        setError(gateMessage(latest, nextGate));
+        return;
+      }
       const existing = await fetchRecords();
       if (isNameTaken(name, existing)) {
         setError(NAME_TAKEN_MESSAGE);
         nameRef.current?.focus();
         return;
       }
+      startedAtRef.current = aligned;
+      eventEndRef.current = Date.parse(latest.endAt);
+      limitRef.current = eventLimitSeconds(latest);
+      setError("");
+      setSaveError("");
+      setAnswers([]);
+      setIndex(0);
+      setSelected(null);
+      setBlankDraft("");
+      setTimedOut(false);
+      finishingRef.current = false;
+      setResult(null);
+      setSeconds(0);
+      setRemaining(Math.max(0, Math.floor((eventEndRef.current - aligned) / 1000)));
+      setScreen("quiz");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "暂时无法核对该姓名，请稍后再试");
-      return;
+      setError(cause instanceof Error ? cause.message : "暂时无法开始答题，请稍后再试");
     } finally {
       setBusy(false);
     }
-    setError("");
-    setSaveError("");
-    setAnswers([]);
-    setIndex(0);
-    setSelected(null);
-    setBlankDraft("");
-    setTimedOut(false);
-    finishingRef.current = false;
-    setResult(null);
-    setStartedAt(Date.now());
-    setSeconds(0);
-    setScreen("quiz");
   }
 
   async function submitQuiz(elapsed: number, timeout: boolean) {
@@ -162,8 +215,8 @@ export function QuizApp() {
     if (timeout) setTimedOut(true);
     const snap = snapshotRef.current;
     const given = [...snap.answers];
-    if (snap.selected !== null && given.length === snap.index) given.push(snap.selected);
-    const graded = gradeAnswers(given, elapsed);
+    if (!timeout && snap.selected !== null && given.length === snap.index) given.push(snap.selected);
+    const graded = gradeAnswers(given, elapsed, limitRef.current);
     setBusy(true);
     setSaveError("");
     try {
@@ -184,36 +237,41 @@ export function QuizApp() {
   }
   submitRef.current = submitQuiz;
 
-  function choose(value: number | string) {
-    if (selected !== null || timedOut) return;
-    setSelected(value);
+  function choose(optionIndex: number) {
+    if (timedOut) return;
+    setSelected(optionIndex);
   }
 
-  function confirmBlank() {
-    const value = blankDraft.trim();
-    if (!value) {
-      blankRef.current?.focus();
+  async function advance(value: number | string) {
+    if (busy || timedOut) return;
+    if (index === questions.length - 1) {
+      snapshotRef.current = { answers, selected: value, index };
+      const aligned = Date.now() + clockOffsetRef.current;
+      const elapsed = Math.max(0, Math.floor((Math.min(aligned, eventEndRef.current) - startedAtRef.current) / 1000));
+      await submitQuiz(elapsed, false);
       return;
     }
-    choose(value);
+    setAnswers((currentAnswers) => [...currentAnswers, value]);
+    setIndex((currentIndex) => currentIndex + 1);
+    setSelected(null);
+    setBlankDraft("");
   }
 
   function skipBlank() {
-    if (busy || timedOut || current.kind !== "blank" || selected !== null) return;
-    setBlankDraft("");
-    setSelected("");
+    if (busy || timedOut || current.kind !== "blank") return;
+    void advance("");
   }
 
-  async function next() {
-    if (selected === null || busy || timedOut) return;
-    if (index === questions.length - 1) {
-      await submitQuiz(seconds, false);
+  function next() {
+    if (busy || timedOut) return;
+    if (current.kind === "blank") {
+      const text = blankDraft.trim();
+      if (!text) return;
+      void advance(text);
       return;
     }
-    setAnswers((value) => [...value, selected]);
-    setIndex((value) => value + 1);
-    setSelected(null);
-    setBlankDraft("");
+    if (selected === null) return;
+    void advance(selected);
   }
 
   function leaveQuiz() {
@@ -243,7 +301,12 @@ export function QuizApp() {
       {screen === "intro" && (
         <main id="main" className="login-page">
           <form className="login" onSubmit={start}>
-            <h1>民俗知识挑战</h1>
+            <h1>{TITLE}</h1>
+            <p className="notice">
+              {gate === "open" && eventState?.startAt && eventState.endAt
+                ? `本场 ${formatEventTime(eventState.startAt)} 至 ${formatEventTime(eventState.endAt)}，剩余 ${formatDuration(Math.max(0, Math.floor((Date.parse(eventState.endAt) - now) / 1000)))}`
+                : gateMessage(eventState, gate)}
+            </p>
             <label>
               <span className="visually-hidden">姓名</span>
               <input
@@ -274,7 +337,7 @@ export function QuizApp() {
               />
             </label>
             {error && <p className="error" role="alert">{error}</p>}
-            <button className="primary" type="submit" disabled={busy}>开始答题</button>
+            <button className="primary" type="submit" disabled={busy || gate !== "open"}>开始答题</button>
           </form>
         </main>
       )}
@@ -285,7 +348,7 @@ export function QuizApp() {
               <button className="back" type="button" aria-label="返回" onClick={leaveQuiz}>
                 <Chevron />
               </button>
-              <h1>民俗知识挑战</h1>
+              <h1>{TITLE}</h1>
               <span />
             </header>
             <div className="status">
@@ -299,56 +362,43 @@ export function QuizApp() {
                 <label className="blank">
                   <span className="visually-hidden">答案</span>
                   <input
-                    ref={blankRef}
                     value={blankDraft}
                     onChange={(event) => setBlankDraft(event.target.value)}
                     placeholder="填写答案"
-                    disabled={answered || timedOut}
+                    disabled={timedOut}
                     maxLength={40}
                   />
                 </label>
               ) : (
                 <div className="options">
-                  {current.options.map((option, optionIndex) => {
-                    const chosen = typeof selected === "number" ? selected : null;
-                    const state = !answered ? "" : optionIndex === current.answer ? "correct" : optionIndex === chosen ? "wrong" : "";
-                    return (
-                      <button
-                        key={option}
-                        type="button"
-                        className={`option ${state}`}
-                        onClick={() => choose(optionIndex)}
-                        disabled={answered || timedOut}
-                      >
-                        <span>{current.kind === "judge" ? option : `${String.fromCharCode(65 + optionIndex)} ${option}`}</span>
-                        {answered && optionIndex === current.answer && <Check />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              {current.kind === "blank" && !answered && !timedOut && (
-                <div className="blank-actions">
-                  <button className="secondary" type="button" onClick={skipBlank}>跳过</button>
-                  <button className="primary" type="button" onClick={confirmBlank}>确定</button>
-                </div>
-              )}
-              {answered && !timedOut && (
-                <div className="explain" aria-live="polite">
-                  <h3>答案解析</h3>
-                  <p>正确答案：{correctAnswerLabel(current)}</p>
-                  <p>{correct ? current.note : `答错，用时增加 10 秒。${current.note}`}</p>
+                  {current.options.map((option, optionIndex) => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={`option ${selected === optionIndex ? "selected" : ""}`}
+                      onClick={() => choose(optionIndex)}
+                      disabled={timedOut}
+                      aria-pressed={selected === optionIndex}
+                    >
+                      <span>{current.kind === "judge" ? option : `${String.fromCharCode(65 + optionIndex)} ${option}`}</span>
+                    </button>
+                  ))}
                 </div>
               )}
               {timedOut && <p className="error" role="alert">答题时间已到，未作答的题目按答错计算。</p>}
               {saveError && <p className="error" role="alert">{saveError}</p>}
               {timedOut && saveError && (
-                <button className="primary" type="button" onClick={() => void submitQuiz(QUIZ_LIMIT_SECONDS, true)} disabled={busy}>提交成绩</button>
+                <button className="primary" type="button" onClick={() => void submitQuiz(seconds, true)} disabled={busy}>提交成绩</button>
               )}
-              {answered && !timedOut && (
-                <button className="primary" type="button" onClick={() => void next()} disabled={busy}>
-                  {index === questions.length - 1 ? "完成" : "下一题"}
-                </button>
+              {!timedOut && (
+                <div className={current.kind === "blank" ? "blank-actions" : undefined}>
+                  {current.kind === "blank" && (
+                    <button className="secondary" type="button" onClick={skipBlank} disabled={busy}>跳过</button>
+                  )}
+                  <button className="primary" type="button" onClick={next} disabled={busy || !canAnswer}>
+                    {index === questions.length - 1 ? "完成" : "下一题"}
+                  </button>
+                </div>
               )}
             </section>
           </div>
