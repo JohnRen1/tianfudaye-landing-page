@@ -1,0 +1,16 @@
+{
+  "name": "比特派",
+  "short_name": "比特派",
+  "description": "比特派钱包界面演示",
+  "start_url": "./index.html?embed=1",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F5F6F8",
+  "theme_color": "#F5F6F8",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
