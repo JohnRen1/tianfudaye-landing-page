@@ -1,10 +1,23 @@
 // 离线缓存：先走缓存，后台更新
-const CACHE = 'bitpie-v3'
+const CACHE = 'bitpie-v4'
 async function precache() {
-  const res = await fetch('./precache.json', { cache: 'no-store' })
-  const list = await res.json()
   const cache = await caches.open(CACHE)
-  await cache.addAll(list)
+  let list = ['./index.html']
+  try {
+    const res = await fetch('./precache.json', { cache: 'no-store' })
+    if (res.ok) list = await res.json()
+  } catch (_) { /* 拿不到清单就用最小集 */ }
+
+  // 逐个缓存：单个资源失败（404 / 重定向）不影响整体安装
+  await Promise.allSettled(
+    list.map(async url => {
+      try {
+        const req = new Request(url, { cache: 'reload' })
+        const res = await fetch(req)
+        if (res.ok) await cache.put(req, res)
+      } catch (_) { /* 忽略单个失败 */ }
+    })
+  )
 }
 
 self.addEventListener('install', e => {
