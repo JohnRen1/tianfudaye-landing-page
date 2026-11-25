@@ -1,5 +1,5 @@
 // 离线缓存：先走缓存，后台更新
-const CACHE = 'bitpie-27e8ffd0'
+const CACHE = 'bitpie-b62d3399'
 async function precache() {
   const cache = await caches.open(CACHE)
   let list = ['./index.html']
