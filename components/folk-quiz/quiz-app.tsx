@@ -7,6 +7,7 @@ import type { RecordRow } from "@/lib/folk-quiz/types";
 import "./folk-quiz.css";
 
 const TITLE = "江山市图书馆阅读挑战赛";
+const LOCAL_PREVIEW = process.env.NODE_ENV === "development";
 type Screen = "intro" | "quiz" | "result";
 type EventGate = "loading" | "unset" | "early" | "open" | "closed";
 
@@ -27,7 +28,7 @@ function Trophy() {
   );
 }
 
-function ResultScreen({ result, total, rows, timedOut, onAgain }: { result: RecordRow; total: number; rows: RecordRow[]; timedOut: boolean; onAgain: () => void }) {
+function ResultScreen({ result, total, rows, timedOut }: { result: RecordRow; total: number; rows: RecordRow[]; timedOut: boolean }) {
   const board = leaderboardFrom(rows);
   const rank = Math.max(1, board.findIndex((row) => row.id === result.id) + 1);
 
@@ -51,7 +52,6 @@ function ResultScreen({ result, total, rows, timedOut, onAgain }: { result: Reco
         </div>
         <p className="formula">净用时 = 原始用时 + 答错题数 × 10 秒<br />（每错一题罚时 10 秒）</p>
         {timedOut && <p className="formula">答题时间已到，未作答的题目按答错计算。</p>}
-        <button className="primary" type="button" onClick={onAgain}>再答一次</button>
       </div>
     </main>
   );
@@ -71,6 +71,18 @@ function gateMessage(event: QuizEventState | null, gate: EventGate) {
   if (gate === "early") return `活动尚未开始，开始时间 ${formatEventTime(event.startAt)}`;
   if (gate === "closed") return "活动已结束";
   return "";
+}
+
+function introNotice(event: QuizEventState | null, gate: EventGate, now: number) {
+  if (LOCAL_PREVIEW) {
+    if (gate === "loading") return "正在读取活动时间";
+    if (event?.startAt && event.endAt) return `本场 ${formatEventTime(event.startAt)} 至 ${formatEventTime(event.endAt)}`;
+    return "";
+  }
+  if (gate === "open" && event?.startAt && event.endAt) {
+    return `本场 ${formatEventTime(event.startAt)} 至 ${formatEventTime(event.endAt)}，剩余 ${formatDuration(Math.max(0, Math.floor((Date.parse(event.endAt) - now) / 1000)))}`;
+  }
+  return gateMessage(event, gate);
 }
 
 export function QuizApp() {
@@ -104,6 +116,7 @@ export function QuizApp() {
   const current = questions[index];
   const now = Date.now() + clockOffset;
   const gate = eventGate(eventState, now);
+  const notice = introNotice(eventState, gate, now);
   const canAnswer = current.kind === "blank" ? blankDraft.trim().length > 0 : selected !== null;
 
   useEffect(() => {
@@ -177,7 +190,8 @@ export function QuizApp() {
       setEventState(latest);
       const aligned = Date.now() + offset;
       const nextGate = eventGate(latest, aligned);
-      if (nextGate !== "open" || !latest.endAt) {
+      const sharedClock = !LOCAL_PREVIEW || nextGate === "open";
+      if (!LOCAL_PREVIEW && (nextGate !== "open" || !latest.endAt)) {
         setError(gateMessage(latest, nextGate));
         return;
       }
@@ -188,8 +202,8 @@ export function QuizApp() {
         return;
       }
       startedAtRef.current = aligned;
-      eventEndRef.current = Date.parse(latest.endAt);
-      limitRef.current = eventLimitSeconds(latest);
+      eventEndRef.current = sharedClock && latest.endAt ? Date.parse(latest.endAt) : aligned + 30 * 60 * 1000;
+      limitRef.current = sharedClock ? eventLimitSeconds(latest) : 30 * 60;
       setError("");
       setSaveError("");
       setAnswers([]);
@@ -284,17 +298,6 @@ export function QuizApp() {
     setBlankDraft("");
   }
 
-  function reset() {
-    setScreen("intro");
-    setName("");
-    setPhone("");
-    setError("");
-    setResult(null);
-    setTimedOut(false);
-    setBlankDraft("");
-    finishingRef.current = false;
-  }
-
   return (
     <div className="folk-quiz">
       <a className="skip" href="#main">跳到主要内容</a>
@@ -302,11 +305,7 @@ export function QuizApp() {
         <main id="main" className="login-page">
           <form className="login" onSubmit={start}>
             <h1>{TITLE}</h1>
-            <p className="notice">
-              {gate === "open" && eventState?.startAt && eventState.endAt
-                ? `本场 ${formatEventTime(eventState.startAt)} 至 ${formatEventTime(eventState.endAt)}，剩余 ${formatDuration(Math.max(0, Math.floor((Date.parse(eventState.endAt) - now) / 1000)))}`
-                : gateMessage(eventState, gate)}
-            </p>
+            {notice && <p className="notice">{notice}</p>}
             <label>
               <span className="visually-hidden">姓名</span>
               <input
@@ -337,7 +336,8 @@ export function QuizApp() {
               />
             </label>
             {error && <p className="error" role="alert">{error}</p>}
-            <button className="primary" type="submit" disabled={busy || gate !== "open"}>开始答题</button>
+            <button className="primary" type="submit" disabled={busy || (!LOCAL_PREVIEW && gate !== "open")}>开始答题</button>
+            <p className="once">每位参赛选手仅限一次答题机会，请核对好自己的名字</p>
           </form>
         </main>
       )}
@@ -405,7 +405,7 @@ export function QuizApp() {
         </main>
       )}
       {screen === "result" && result && (
-        <ResultScreen result={result} total={questions.length} rows={rows} timedOut={timedOut} onAgain={reset} />
+        <ResultScreen result={result} total={questions.length} rows={rows} timedOut={timedOut} />
       )}
     </div>
   );

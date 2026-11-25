@@ -255,7 +255,7 @@
 
 .folk-quiz .option.selected {
   border-color: #1f2329;
-  background: #f3f4f6;
+  background: #c5cad3;
 }
 
 .folk-quiz .explain {
@@ -463,6 +463,14 @@
 
 .folk-quiz .login .notice {
   margin-top: 12px;
+}
+
+.folk-quiz .once {
+  margin-top: 10px;
+  color: #5c6570;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .folk-quiz .ledger {
